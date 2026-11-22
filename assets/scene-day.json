@@ -1,13 +1,18 @@
 {
+  "theme": "day",
   "image": "window.webp",
   "blurred": "window-blur.jpg",
+  "mask": "mask-day.png",
+  "horizon": 0.468,
   "width": 3200,
   "height": 1801,
   "focus": [0.45, 0.55],
   "keep": { "x": 0.1, "y": 0.05, "w": 0.64, "h": 0.8 },
   "glass": { "x": 0.492, "y": 0.075, "w": 0.236, "h": 0.6 },
   "beam": { "x": 0.265, "y": 0.0, "w": 0.24, "h": 0.5, "angle": -34 },
-  "sea": { "x": 0.47, "y": 0.49, "w": 0.53, "h": 0.23 },
   "turntable": { "cx": 0.061, "cy": 0.6505, "r": 0.044, "squash": 0.22 },
+  "fx": [
+    { "type": "birds", "rect": { "x": 0.48, "y": 0.06, "w": 0.52, "h": 0.3 }, "every": 22 }
+  ],
   "card": "right"
 }

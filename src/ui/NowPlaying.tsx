@@ -20,9 +20,9 @@ const fmt = (sec: number) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
-interface Props { spec: SceneSpec | null; onBack: () => void }
+interface Props { spec: SceneSpec | null; onBack: () => void; theme: 'auto' | 'day' | 'night'; onTheme: () => void }
 
-export function NowPlaying({ spec, onBack }: Props) {
+export function NowPlaying({ spec, onBack, theme, onTheme }: Props) {
   const engine = getEngine();
   const state = useSyncExternalStore(engine.subscribe, engine.getState);
   const song = state.current;
@@ -47,7 +47,7 @@ export function NowPlaying({ spec, onBack }: Props) {
           </div>
         </div>
         <Progress />
-        <Controls onList={() => setListOpen((v) => !v)} listOpen={listOpen} />
+        <Controls onList={() => setListOpen((v) => !v)} listOpen={listOpen} theme={theme} onTheme={onTheme} />
         {state.error ? <div className="sl-error">{state.error}</div> : null}
       </section>
       <Playlist open={listOpen} side={spec?.card === 'left' ? 'left' : 'right'} onClose={() => setListOpen(false)} />
@@ -246,7 +246,7 @@ function Playlist({ open, side, onClose }: { open: boolean; side: 'left' | 'righ
   );
 }
 
-function Controls({ onList, listOpen }: { onList: () => void; listOpen: boolean }) {
+function Controls({ onList, listOpen, theme, onTheme }: { onList: () => void; listOpen: boolean; theme: 'auto' | 'day' | 'night'; onTheme: () => void }) {
   const engine = getEngine();
   const s = useSyncExternalStore(engine.subscribe, engine.getState);
   return (
@@ -259,6 +259,9 @@ function Controls({ onList, listOpen }: { onList: () => void; listOpen: boolean 
         <Icon name={s.repeat === 'one' ? 'repeat1' : 'repeat'} size={19} />
       </button>
       <Volume />
+      <button className="sl-ctl sl-small" onClick={onTheme} title={theme === 'auto' ? '主题：跟着系统' : theme === 'day' ? '主题：白天' : '主题：雨夜'}>
+        <Icon name={theme === 'auto' ? 'auto' : theme === 'day' ? 'sun' : 'moon'} size={18} />
+      </button>
       <button className={`sl-ctl sl-small ${listOpen ? 'is-on' : ''}`} onClick={onList} title="歌单"><Icon name="list" size={19} /></button>
     </div>
   );

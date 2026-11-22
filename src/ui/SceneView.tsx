@@ -11,6 +11,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api, type SongDetail } from './api';
 import { getEngine } from './engine';
+import { FxLayer } from './FxLayer';
+import { LivingScene } from './LivingScene';
 import { Lyrics } from './Lyrics';
 import { place, toPx, upper, type Placement, type SceneSpec } from './scene';
 
@@ -76,13 +78,16 @@ export function SceneView({ spec, song }: Props) {
   return (
     <div className="sl-scene" ref={box}>
       <div className="sl-scene-world" ref={world}>
-        {img ? <img className="sl-scene-img" src={api.assetUrl(spec.image)} alt="" style={img} draggable={false} /> : null}
+        {img && spec.mask
+          ? <LivingScene image={api.assetUrl(spec.image)} mask={api.assetUrl(spec.mask)} blur={spec.fog ? api.assetUrl(spec.fog) : undefined} rain={!!spec.rain} horizon={spec.horizon ?? 0.5} style={img} />
+          : img ? <img className="sl-scene-img" src={api.assetUrl(spec.image)} alt="" style={img} draggable={false} /> : null}
         {beam ? (
           <div className="sl-beam" style={{ left: beam.left, top: beam.top, width: beam.width, height: beam.height }}>
             <div className="sl-beam-rays" style={{ transform: `rotate(${beam.angle}deg)` }} />
           </div>
         ) : null}
         {p ? <Sparkles spec={spec} p={p} w={size.w} h={size.h} /> : null}
+        {p ? <FxLayer spec={spec} p={p} w={size.w} h={size.h} /> : null}
         {p && spec.turntable ? <Turntable spec={spec} p={p} /> : null}
         {glass ? (
           <div className="sl-glass" style={glass}>

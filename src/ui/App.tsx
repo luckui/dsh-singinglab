@@ -6,28 +6,61 @@ import { getEngine } from './engine';
 import { LearnPill, Toast } from './Learning';
 import { Library } from './Library';
 import { NowPlaying } from './NowPlaying';
-import type { SceneSpec } from './scene';
+import type { SceneSpec, Theme } from './scene';
 
-let sceneCache: SceneSpec | null = null;
+const sceneCache = new Map<Theme, SceneSpec>();
 
-function useScene(): SceneSpec | null {
-  const [spec, setSpec] = useState<SceneSpec | null>(sceneCache);
+function useScene(theme: Theme): SceneSpec | null {
+  const [spec, setSpec] = useState<SceneSpec | null>(sceneCache.get(theme) ?? null);
   useEffect(() => {
-    if (sceneCache) return;
+    const hit = sceneCache.get(theme);
+    if (hit) { setSpec(hit); return; }
     let alive = true;
-    api.scene().then((s) => {
-      sceneCache = s;
+    api.scene(theme).then((s) => {
+      sceneCache.set(theme, s);
       if (alive) setSpec(s);
     }).catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [theme]);
   return spec;
+}
+
+export type ThemePref = 'auto' | Theme;
+
+function readPref(): ThemePref {
+  try {
+    const v = localStorage.getItem('dsh-singinglab.theme');
+    return v === 'day' || v === 'night' ? v : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+/** 主题：默认跟着系统的深色 / 浅色走，也可以手动定成白天或雨夜 */
+function useTheme(): [Theme, ThemePref, () => void] {
+  const [pref, setPref] = useState<ThemePref>(readPref);
+  const query = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-color-scheme: dark)') : undefined;
+  const [dark, setDark] = useState(!!query?.matches);
+  useEffect(() => {
+    if (!query) return;
+    const on = () => setDark(query.matches);
+    query.addEventListener('change', on);
+    return () => query.removeEventListener('change', on);
+  }, [query]);
+  const cycle = () => {
+    const order: ThemePref[] = ['auto', 'day', 'night'];
+    const next = order[(order.indexOf(pref) + 1) % order.length];
+    setPref(next);
+    try { localStorage.setItem('dsh-singinglab.theme', next); } catch { /* 存不了就算了 */ }
+  };
+  return [pref === 'auto' ? (dark ? 'night' : 'day') : pref, pref, cycle];
 }
 
 export function App() {
   const engine = getEngine();
   const [view, setView] = useState<'library' | 'now'>(() => (engine.state.current ? 'now' : 'library'));
-  const spec = useScene();
+  const [theme, pref, cycleTheme] = useTheme();
+  const spec = useScene(theme);
 
   useEffect(() => { void engine.refresh(); engine.startJobs(); }, [engine]);
 
@@ -48,14 +81,14 @@ export function App() {
   const bg = spec ? api.assetUrl(spec.blurred ?? spec.image) : null;
 
   return (
-    <div className={`sl-root sl-view-${view}`}>
+    <div className={`sl-root sl-view-${view} sl-theme-${theme}`}>
       <div className="sl-libbg" aria-hidden style={bg ? { backgroundImage: `url(${bg})` } : undefined} />
       <div className="sl-views">
         <div className="sl-pane sl-pane-lib" aria-hidden={view !== 'library'}>
           <Library onOpenNow={() => setView('now')} heroImage={spec ? api.assetUrl(spec.image) : null} />
         </div>
         <div className="sl-pane sl-pane-now" aria-hidden={view !== 'now'}>
-          <NowPlaying spec={spec} onBack={() => setView('library')} />
+          <NowPlaying spec={spec} onBack={() => setView('library')} theme={pref} onTheme={cycleTheme} />
         </div>
       </div>
       <div className="sl-overlay">

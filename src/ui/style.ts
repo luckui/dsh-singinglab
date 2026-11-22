@@ -44,7 +44,8 @@ export const CSS = `
     repeating-linear-gradient(90deg, rgba(255,248,225,0) 0 46px, rgba(255,248,225,.32) 64px, rgba(255,248,225,0) 92px, rgba(255,248,225,0) 150px),
     repeating-linear-gradient(90deg, rgba(255,255,245,0) 0 120px, rgba(255,255,245,.22) 150px, rgba(255,255,245,0) 190px, rgba(255,255,245,0) 260px); }
 @keyframes sl-rays { 0% { opacity: .38; translate: -18px 0; } 100% { opacity: .62; translate: 18px 0; } }
-.sl-sparkles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.sl-sparkles, .sl-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.sl-living { display: block; }
 
 /* 窗台上的唱片：画里的唱片不盖掉（唱臂还在），只在上面叠一层转着的反光和纹路，压扁成透视的椭圆 */
 .sl-tt { position: absolute; pointer-events: none; }
@@ -62,6 +63,9 @@ export const CSS = `
 .sl-glass { position: absolute; container-type: size; pointer-events: auto;
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 78%, transparent 100%);
           mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 78%, transparent 100%); }
+/* 白天：歌词后面一层很淡的蓝影，白字才浮得出来 */
+.sl-theme-day .sl-glass::before { content: ''; position: absolute; inset: 4% -6% 8% -6%; pointer-events: none;
+  background: radial-gradient(60% 46% at 32% 42%, rgba(30, 80, 160, .2), rgba(30, 80, 160, 0) 72%); }
 .sl-glass-sheen { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
   background: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.10) 42%, rgba(255,255,255,0) 52%, rgba(255,255,255,0) 64%, rgba(255,255,255,.06) 70%, rgba(255,255,255,0) 76%); }
 
@@ -84,9 +88,12 @@ export const CSS = `
 /* 玻璃上的歌词：白字，带一点蓝色的光，像映在玻璃上 */
 .sl-lyrics.is-glass { color: #fff; }
 .sl-lyrics.is-glass .sl-line { font-size: clamp(18px, 8.4cqw, 48px); font-weight: 750; letter-spacing: .02em;
-  text-shadow: 0 1px 2px rgba(18, 56, 120, .4), 0 0 18px rgba(40, 110, 205, .55); }
+  text-shadow: 0 1px 2px rgba(18, 56, 120, .45), 0 0 10px rgba(120, 190, 255, .75), 0 0 26px rgba(60, 140, 240, .6); }
 .sl-lyrics.is-glass .sl-line:hover { background: rgba(255,255,255,.08); }
-.sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 14px rgba(255,255,255,.5)); }
+/* 当前这句：荧光（白芯 + 一圈蓝光），打拍子时由 --glow 再亮一点 */
+.sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 3px rgba(255,255,255,.95)) drop-shadow(0 0 10px rgba(150,210,255,.95)) drop-shadow(0 0 26px rgba(70,150,255,.85)); }
+.sl-theme-night .sl-lyrics.is-glass .sl-line { text-shadow: 0 0 8px rgba(140, 210, 255, .55), 0 0 22px rgba(90, 160, 255, .45); }
+.sl-theme-night .sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 3px rgba(255,255,255,.9)) drop-shadow(0 0 12px rgba(120,220,255,1)) drop-shadow(0 0 34px rgba(60,160,255,.9)); }
 .sl-lyrics.is-glass .sl-line.is-current .sl-word { color: transparent; -webkit-background-clip: text; background-clip: text; text-shadow: none;
   background-image: linear-gradient(90deg, #fff 0, #fff var(--p, 0%), rgba(255,255,255,.5) calc(var(--p, 0%) + 6%), rgba(255,255,255,.5) 100%); }
 .sl-lyrics.is-glass .sl-gap span { background: #fff; box-shadow: 0 0 10px rgba(46,120,210,.5); }
@@ -238,6 +245,29 @@ export const CSS = `
   background: rgba(30,52,102,.06); box-shadow: inset 0 0 0 1px rgba(30,52,102,.08); }
 .sl-field input:focus { box-shadow: inset 0 0 0 1.5px var(--sky); }
 .sl-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+
+/* ── 雨夜主题：深色玻璃、浅色字 ── */
+.sl-root.sl-theme-night { --ink: #e9f1ff; --ink-2: rgba(222,234,255,.66); --ink-3: rgba(222,234,255,.4); --sky: #7cc4ff; --sky-2: #a8e0ff;
+  --glass: rgba(18, 26, 56, .55); background: #0b1226; }
+.sl-theme-night .sl-libbg { background-color: #0b1226; }
+.sl-theme-night .sl-libbg::after { background: linear-gradient(180deg, rgba(8,12,30,.55), rgba(8,12,30,.78)); }
+.sl-theme-night .sl-lib-head { background: linear-gradient(180deg, rgba(10,16,38,.8), rgba(10,16,38,.3)); }
+.sl-theme-night .sl-hero::before { background: linear-gradient(90deg, rgba(10,16,38,0) 30%, rgba(10,16,38,.55) 52%, rgba(10,16,38,.88) 72%); }
+.sl-theme-night .sl-hero { box-shadow: 0 30px 60px -34px rgba(0,0,0,.8), inset 0 0 0 1px rgba(160,200,255,.18); }
+.sl-theme-night .sl-hero-kicker, .sl-theme-night .sl-btn, .sl-theme-night .sl-search, .sl-theme-night .sl-seg, .sl-theme-night .sl-card-tag {
+  background: rgba(30, 42, 84, .7); color: var(--ink); box-shadow: inset 0 0 0 1px rgba(160,200,255,.18); }
+.sl-theme-night .sl-btn-primary { background: linear-gradient(145deg, #4a9bff, #2f63c9); color: #fff; }
+.sl-theme-night .sl-seg button.is-on { background: #e9f1ff; color: #10162a; }
+.sl-theme-night .sl-card-cover { box-shadow: 0 16px 30px -18px rgba(0,0,0,.8), 0 0 0 1px rgba(160,200,255,.14); }
+.sl-theme-night .sl-card, .sl-theme-night .sl-drawer, .sl-theme-night .sl-mini, .sl-theme-night .sl-pill, .sl-theme-night .sl-learnlist,
+.sl-theme-night .sl-back, .sl-theme-night .sl-bili, .sl-theme-night .sl-bili-bar, .sl-theme-night .sl-modal-card {
+  background: rgba(16, 24, 54, .62); box-shadow: 0 24px 60px -24px rgba(0,0,0,.75), inset 0 0 0 1px rgba(160,200,255,.16); color: var(--ink); }
+.sl-theme-night .sl-ctl:hover, .sl-theme-night .sl-row:hover { background: rgba(160,200,255,.1); }
+.sl-theme-night .sl-row.is-current { background: rgba(124,196,255,.16); }
+.sl-theme-night .sl-row.is-current .sl-row-title { color: #9fd6ff; }
+.sl-theme-night .sl-bar-track, .sl-theme-night .sl-pill-bar, .sl-theme-night .sl-job-bar { background: rgba(200,220,255,.16); }
+.sl-theme-night .sl-field input { background: rgba(160,200,255,.08); color: var(--ink); }
+.sl-theme-night .sl-minidisc-label { background: #1a2550; }
 
 /* ── 歌库 ── */
 .sl-library { position: absolute; inset: 0; }

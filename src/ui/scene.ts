@@ -6,9 +6,28 @@
 
 export interface Rect { x: number; y: number; w: number; h: number }
 
+export type Fx =
+  | { type: 'glow'; x: number; y: number; r: number; color: string; strength: number }
+  | { type: 'lighthouse'; x: number; y: number; len: number; period: number }
+  | { type: 'rainfall'; rects: Rect[]; density?: number }
+  | { type: 'birds'; rect: Rect; every: number };
+
+export type Theme = 'day' | 'night';
+
 export interface SceneSpec {
+  theme?: Theme;
   /** 插画文件名（assets 目录下） */
   image: string;
+  /** 特效遮罩（R 摆、G 水、B 玻璃、A 热气），有它才用 WebGL 动起来 */
+  mask?: string;
+  /** 起雾玻璃用的模糊图（下雨的主题） */
+  fog?: string;
+  /** 玻璃上下雨 */
+  rain?: boolean;
+  /** 海平线（比例），水波越往下越大 */
+  horizon?: number;
+  /** 额外会动的东西 */
+  fx?: Fx[];
   /** 模糊小图，给歌库页当背景（可选，不给就用大图加模糊） */
   blurred?: string;
   width: number;

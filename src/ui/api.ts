@@ -34,8 +34,8 @@ export const api = {
   cancel: (id: string) => post<{ ok: boolean }>('cancel', { id }),
   imgUrl: (u: string) => `${BASE}/img?u=${encodeURIComponent(u)}`,
   assetUrl: (name: string) => `${BASE}/asset?name=${encodeURIComponent(name)}`,
-  scene: async () => {
-    const res = await fetch(`${BASE}/asset?name=scene.json`, { credentials: 'same-origin' });
+  scene: async (theme: import('./scene').Theme) => {
+    const res = await fetch(`${BASE}/asset?name=scene-${theme}.json`, { credentials: 'same-origin' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json() as Promise<import('./scene').SceneSpec>;
   },
