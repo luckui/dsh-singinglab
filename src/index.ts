@@ -44,9 +44,11 @@ export interface Settings {
   remote: string;
   /** 最长学几秒的歌 */
   maxSec: number;
+  /** 学好的歌放哪（空 = <数据目录>/songs）。学歌程序在 Windows、DSH 在 WSL 时要放在两边都读得到的盘上 */
+  songsDir: string;
 }
 
-const DEFAULTS: Settings = { libraries: [], python: '', config: '', remote: '', maxSec: 600 };
+const DEFAULTS: Settings = { libraries: [], python: '', config: '', remote: '', maxSec: 600, songsDir: '' };
 
 const dataDir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-singinglab');
 /** lib/index.js 旁边的 ../assets */
@@ -66,6 +68,7 @@ function normalize(raw: any): Settings {
     config: str(raw?.config, DEFAULTS.config),
     remote: str(raw?.remote, DEFAULTS.remote),
     maxSec: Number(raw?.maxSec) > 0 ? Number(raw.maxSec) : DEFAULTS.maxSec,
+    songsDir: str(raw?.songsDir, DEFAULTS.songsDir),
   };
 }
 
@@ -78,7 +81,8 @@ async function readSettings(): Promise<Settings> {
   }
 }
 
-const libraryDirs = (s: Settings) => [join(dataDir, 'songs'), ...s.libraries];
+const songsDirOf = (s: Settings) => s.songsDir || join(dataDir, 'songs');
+const libraryDirs = (s: Settings) => [songsDirOf(s), ...s.libraries];
 
 /** 音频按 Range 回一段；浏览器拖进度条、边下边放都靠它 */
 async function serveFile(request: Request, file: string, type: string): Promise<Response> {
@@ -105,11 +109,11 @@ export function apply(ctx: HostContext): void {
   const bili = new Bili();
   let learner: Learner | null = null;
   const ready = (async () => {
-    await mkdir(join(dataDir, 'songs'), { recursive: true }).catch(() => {});
     settings = await readSettings();
+    await mkdir(songsDirOf(settings), { recursive: true }).catch(() => {});
     library.setDirs(libraryDirs(settings));
     learner = new Learner(bili, {
-      songsDir: join(dataDir, 'songs'),
+      songsDir: songsDirOf(settings),
       stateFile: join(dataDir, 'jobs.json'),
       script: join(assetsDir, 'sing', 'prepare.py'),
       settings: () => settings,

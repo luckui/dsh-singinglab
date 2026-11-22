@@ -181,6 +181,9 @@ export const CSS = `
 /* 学歌：右上角的药丸、学歌列表、提示条、B 站搜索结果、确认框 */
 .sl-overlay { position: absolute; top: 16px; right: 18px; z-index: 6; display: flex; justify-content: flex-end; pointer-events: none; }
 .sl-overlay > * { pointer-events: auto; }
+/* 播放页：右边是歌单抽屉和控制卡片，学歌的药丸放到左上角，挨着返回键 */
+.sl-root.sl-view-now .sl-overlay { right: auto; left: 66px; justify-content: flex-start; }
+.sl-root.sl-view-now .sl-learnlist { right: auto; left: 0; }
 .sl-root:has(.sl-view-now) .sl-overlay, .sl-root.sl-view-now:has(.sl-now.is-idle) .sl-overlay { transition: opacity .8s; }
 .sl-root.sl-view-now:has(.sl-now.is-idle) .sl-overlay { opacity: 0; pointer-events: none; }
 .sl-pill-wrap { position: relative; }
