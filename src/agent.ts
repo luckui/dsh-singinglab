@@ -118,7 +118,7 @@ export function apply(ctx: AgentContext): void {
 
   reg(defineTool({
     name: 'singinglab_learn',
-    description: '让她学一首歌（B 站视频）：在用户电脑上分离人声、换成她的声音，一首大约 3 分钟（看显卡）。学会了播放器会自动放（正在放别的就排到下一首）。歌名要准（对歌词要用）。',
+    description: '让她学一首歌（B 站视频）：在用户电脑上分离人声、换成她的声音，一首大约 3 分钟（看显卡）。在后台学，学会了播放器会自动放（正在放别的就排到下一首），不用等它学完：告诉用户大概几分钟后会放，这一轮就可以结束。用户之后问起，再用 singinglab_status 看。歌名要准（对歌词要用）。',
     parameters: {
       bvid: { type: 'string', required: true, description: 'BV 号或视频链接' },
       title: { type: 'string', required: true, description: '歌名（干净的歌名，不要「MV」「高音质」这些）' },
@@ -134,8 +134,8 @@ export function apply(ctx: AgentContext): void {
       if (lack) return `${lack}\n可以先调 singinglab_prepare。`;
       const job = learner.learn({ bvid: ref.bvid, page: args.page ?? ref.page, title: String(args.title ?? ''), artist: args.artist, autoplay: true });
       return job.state === 'queued' && learner.jobs.some((j) => j.state === 'running' && j.id !== job.id)
-        ? `排上了《${job.title}》，前面还有歌在学。学会了会自动放。`
-        : `开始学《${job.title}》，大约 3 分钟，学会了会自动放。`;
+        ? `排上了《${job.title}》，前面还有歌在学。在后台学，学会了会自动放，不用等。`
+        : `开始学《${job.title}》，在后台学，大约 3 分钟，学会了会自动放，不用等。`;
     },
   }), 'singinglab_learn');
 
