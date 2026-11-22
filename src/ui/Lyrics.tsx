@@ -181,7 +181,7 @@ export function Lyrics({ song, variant = 'stage' }: Props) {
               onClick={() => getEngine().seek(line.start)}
             >
               {tokens.map((tok, k) => (
-                <span key={k} className="sl-word" ref={(r) => { words.current[i][k] = r; }}>{tok}</span>
+                <span key={k} className="sl-word" ref={(r) => { (words.current[i] ??= [])[k] = r; }}>{tok}</span>
               ))}
             </div>
           );

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type IconName = 'play' | 'pause' | 'prev' | 'next' | 'shuffle' | 'repeat' | 'repeat1' | 'volume' | 'mute' | 'down' | 'search' | 'fish' | 'note';
+export type IconName = 'play' | 'pause' | 'prev' | 'next' | 'shuffle' | 'repeat' | 'repeat1' | 'volume' | 'mute' | 'down' | 'search' | 'fish' | 'note' | 'list' | 'close';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   play: <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" fill="currentColor" stroke="none" />,
@@ -15,6 +15,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   down: <path d="m6 9.5 6 6 6-6" />,
   search: <g><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></g>,
   fish: <g><path d="M3 12c2.6-4.2 6.2-6 10-6 3.4 0 6.2 2.4 8 6-1.8 3.6-4.6 6-8 6-3.8 0-7.4-1.8-10-6Z" /><path d="M3 12 1 8.5M3 12l-2 3.5" /><circle cx="16.2" cy="10.6" r="1" fill="currentColor" stroke="none" /></g>,
+  list: <g><path d="M4 6.5h11M4 12h11M4 17.5h7" /><path d="M17.5 14.5v-8l3.5 1" /><circle cx="15.8" cy="16.8" r="2.2" /></g>,
+  close: <path d="M6 6l12 12M18 6 6 18" />,
   note: <g><path d="M9 18V6l10-2v12" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="16.5" cy="16" r="2.5" /></g>,
 };
 

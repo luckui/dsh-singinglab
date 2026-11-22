@@ -4,7 +4,7 @@
  * 放歌时鼠标 4 秒不动，卡片和返回键淡出，整页就是一张会动的壁纸；一动鼠标又回来。
  */
 
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { getEngine } from './engine';
 import { Icon } from './icons';
@@ -27,10 +27,11 @@ export function NowPlaying({ spec, onBack }: Props) {
   const state = useSyncExternalStore(engine.subscribe, engine.getState);
   const song = state.current;
   const id = song?.id ?? state.queue[state.index] ?? null;
-  const idle = useIdle(state.playing);
+  const [listOpen, setListOpen] = useState(false);
+  const idle = useIdle(state.playing && !listOpen);
 
   return (
-    <div className={`sl-now ${idle ? 'is-idle' : ''}`}>
+    <div className={`sl-now ${idle ? 'is-idle' : ''} ${listOpen ? 'is-list' : ''}`}>
       {spec ? <SceneView spec={spec} song={song} /> : <div className="sl-scene sl-scene-missing" />}
       <button className="sl-back" onClick={onBack} title="回到歌库"><Icon name="down" /></button>
       <section className={`sl-card sl-card-${spec?.card ?? 'left'}`}>
@@ -46,9 +47,10 @@ export function NowPlaying({ spec, onBack }: Props) {
           </div>
         </div>
         <Progress />
-        <Controls />
+        <Controls onList={() => setListOpen((v) => !v)} listOpen={listOpen} />
         {state.error ? <div className="sl-error">{state.error}</div> : null}
       </section>
+      <Playlist open={listOpen} side={spec?.card === 'left' ? 'left' : 'right'} onClose={() => setListOpen(false)} />
     </div>
   );
 }
@@ -190,7 +192,61 @@ function Progress() {
   );
 }
 
-function Controls() {
+/** 歌单抽屉：不用回歌库也能换歌。默认列的是播放队列，搜索时搜整个歌库 */
+function Playlist({ open, side, onClose }: { open: boolean; side: 'left' | 'right'; onClose: () => void }) {
+  const engine = getEngine();
+  const s = useSyncExternalStore(engine.subscribe, engine.getState);
+  const [query, setQuery] = useState('');
+  const q = useDeferredValue(query.trim().toLowerCase());
+  const listRef = useRef<HTMLDivElement>(null);
+  const byId = useMemo(() => new Map(s.songs.map((x) => [x.id, x])), [s.songs]);
+  const rows = useMemo(() => {
+    if (q) return s.songs.filter((x) => `${x.title} ${x.artist} ${x.who}`.toLowerCase().includes(q));
+    const ids = s.queue.length ? s.queue : s.songs.map((x) => x.id);
+    return ids.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => !!x);
+  }, [q, s.queue, s.songs, byId]);
+  const currentId = s.current?.id ?? s.queue[s.index];
+
+  // 打开时把正在放的那首滚到视线里
+  useEffect(() => {
+    if (!open || q) return;
+    const el = listRef.current?.querySelector('.is-current') as HTMLElement | null;
+    el?.scrollIntoView({ block: 'center' });
+  }, [open, q]);
+
+  const pick = (id: string) => {
+    if (id === currentId) { if (!s.playing) engine.toggle(); return; }
+    if (q) void engine.playSong(id, rows.map((x) => x.id));
+    else engine.jump(id);
+  };
+
+  return (
+    <aside className={`sl-drawer sl-drawer-${side} ${open ? 'is-open' : ''}`} aria-hidden={!open}>
+      <div className="sl-drawer-head">
+        <div className="sl-drawer-title">{q ? `找到 ${rows.length} 首` : `播放列表 · ${rows.length} 首`}</div>
+        <button className="sl-ctl sl-small" onClick={onClose} title="收起"><Icon name="close" size={18} /></button>
+      </div>
+      <label className="sl-search sl-drawer-search">
+        <Icon name="search" size={16} />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="在全部歌里找" />
+      </label>
+      <div className="sl-drawer-list" ref={listRef}>
+        {rows.map((song) => (
+          <button key={song.id} className={`sl-row ${song.id === currentId ? 'is-current' : ''}`} onClick={() => pick(song.id)}>
+            <img className="sl-row-cover" src={api.coverUrl(song.id)} alt="" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }} />
+            <span className="sl-row-text">
+              <span className="sl-row-title">{song.title}</span>
+              <span className="sl-row-sub">{song.artist || song.who}</span>
+            </span>
+            {song.id === currentId ? <span className="sl-row-eq">{s.playing ? <span className="sl-eq"><i /><i /><i /></span> : <Icon name="pause" size={14} />}</span> : null}
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function Controls({ onList, listOpen }: { onList: () => void; listOpen: boolean }) {
   const engine = getEngine();
   const s = useSyncExternalStore(engine.subscribe, engine.getState);
   return (
@@ -203,6 +259,7 @@ function Controls() {
         <Icon name={s.repeat === 'one' ? 'repeat1' : 'repeat'} size={19} />
       </button>
       <Volume />
+      <button className={`sl-ctl sl-small ${listOpen ? 'is-on' : ''}`} onClick={onList} title="歌单"><Icon name="list" size={19} /></button>
     </div>
   );
 }

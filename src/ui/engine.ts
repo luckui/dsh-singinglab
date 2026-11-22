@@ -156,6 +156,14 @@ class Engine {
     }
   }
 
+  /** 在当前队列里跳到某首（不在队列里就从它开始按歌库顺序放） */
+  jump(id: string): void {
+    const i = this.state.queue.indexOf(id);
+    if (i < 0) { void this.playSong(id); return; }
+    this.set({ index: i });
+    void this.load(id, true);
+  }
+
   toggle(): void {
     if (!this.state.current) {
       const first = this.state.songs[0];

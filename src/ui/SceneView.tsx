@@ -28,9 +28,9 @@ export function SceneView({ spec, song }: Props) {
     const measure = () => {
       const w = el.clientWidth, h = el.clientHeight;
       setSize({ w, h });
-      // 多放大 4%，给呼吸和视差留边，不露底
-      const pl = place(spec, w * 1.04, h * 1.04);
-      setP({ scale: pl.scale, left: pl.left - w * 0.02, top: pl.top - h * 0.02 });
+      // 多放大 8%，给呼吸、漂移和视差留边，不露底
+      const pl = place(spec, w * 1.08, h * 1.08);
+      setP({ scale: pl.scale, left: pl.left - w * 0.04, top: pl.top - h * 0.04 });
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -55,8 +55,12 @@ export function SceneView({ spec, song }: Props) {
       if (reduce) return;
       cx += (mx - cx) * 0.04;
       cy += (my - cy) * 0.04;
-      const s = 1 + 0.008 * Math.sin(now / 6000);
-      w.style.transform = `translate3d(${(-cx * 7).toFixed(2)}px, ${(-cy * 5).toFixed(2)}px, 0) scale(${s.toFixed(4)})`;
+      // 呼吸：约 9 秒一吸一呼，放大 0～3%；再加一点慢慢的漂移，鼠标不动时画面也是活的
+      const breath = 0.5 - 0.5 * Math.cos((now / 9000) * Math.PI * 2);
+      const s = 1.004 + 0.026 * breath;
+      const dx = 14 * Math.sin(now / 13000) - cx * 9;
+      const dy = 8 * Math.sin(now / 17000 + 1.3) - cy * 6;
+      w.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0) scale(${s.toFixed(4)})`;
     };
     raf = requestAnimationFrame(frame);
     return () => {

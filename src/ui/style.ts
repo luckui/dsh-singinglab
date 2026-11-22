@@ -150,10 +150,33 @@ export const CSS = `
 .sl-play:hover { background: linear-gradient(145deg, #5aa7ff, #3770d6); transform: scale(1.04); }
 .sl-play svg { width: 24px; height: 24px; }
 .sl-volume { display: flex; align-items: center; gap: 6px; color: var(--ink-3); }
-.sl-volume input { -webkit-appearance: none; appearance: none; width: 62px; height: 4px; border-radius: 99px; outline: none; cursor: pointer;
+.sl-volume input { -webkit-appearance: none; appearance: none; width: 52px; height: 4px; border-radius: 99px; outline: none; cursor: pointer;
   background: linear-gradient(90deg, var(--sky) var(--v), rgba(30,52,102,.15) var(--v)); }
 .sl-volume input::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(20,50,110,.45); }
 .sl-error { margin-top: 8px; font-size: 12.5px; color: #b4233a; background: rgba(255,220,225,.7); padding: 6px 10px; border-radius: 10px; }
+
+/* 歌单抽屉 */
+.sl-drawer { position: absolute; top: 16px; bottom: 16px; width: min(360px, calc(100% - 32px)); z-index: 4; display: flex; flex-direction: column;
+  border-radius: 26px; padding: 14px 10px 10px 14px; background: rgba(255,255,255,.66); backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow: 0 30px 70px -30px rgba(26,72,150,.6), inset 0 0 0 1px rgba(255,255,255,.8);
+  transition: transform .6s var(--ease), opacity .45s var(--ease); opacity: 0; pointer-events: none; }
+.sl-drawer-right { right: 16px; transform: translateX(30px); }
+.sl-drawer-left { left: 16px; transform: translateX(-30px); }
+.sl-drawer.is-open { opacity: 1; transform: none; pointer-events: auto; }
+.sl-now.is-list .sl-card { opacity: 0; pointer-events: none; transform: translateY(12px); }
+.sl-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 8px 4px; }
+.sl-drawer-title { font-size: 16px; font-weight: 800; }
+.sl-drawer .sl-drawer-search { width: auto; margin: 0 4px 8px 0; height: 36px; }
+.sl-drawer-list { flex: 1; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: rgba(30,52,102,.25) transparent; }
+.sl-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px; border-radius: 14px; text-align: left; transition: background .2s; }
+.sl-row:hover { background: rgba(255,255,255,.7); }
+.sl-row.is-current { background: rgba(61,139,255,.14); }
+.sl-row-cover { width: 56px; height: 35px; border-radius: 8px; object-fit: cover; flex: none; background: rgba(30,52,102,.08); }
+.sl-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sl-row-title { font-size: 13.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl-row.is-current .sl-row-title { color: #2f6fe0; }
+.sl-row-sub { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl-row-eq { color: var(--sky); flex: none; padding-right: 4px; }
 
 /* ── 歌库 ── */
 .sl-library { position: absolute; inset: 0; }
