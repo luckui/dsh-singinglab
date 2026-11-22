@@ -3,9 +3,12 @@ import { build } from 'esbuild';
 import { rm } from 'node:fs/promises';
 
 await rm('lib', { recursive: true, force: true });
+// 插件本体和 AI 工具两个入口，共用的模块（runtime.ts）拆进 lib/chunks/，两边拿到的是同一份
 await build({
-  entryPoints: ['src/index.ts'],
-  outfile: 'lib/index.js',
+  entryPoints: { index: 'src/index.ts', agent: 'src/agent.ts' },
+  outdir: 'lib',
+  chunkNames: 'chunks/[name]-[hash]',
+  splitting: true,
   bundle: true,
   platform: 'node',
   format: 'esm',

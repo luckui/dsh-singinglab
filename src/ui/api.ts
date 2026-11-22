@@ -30,7 +30,7 @@ export const api = {
   coverUrl: (id: string) => `${BASE}/cover?id=${encodeURIComponent(id)}`,
   search: (q: string) => post<{ hits: Hit[] }>('search', { q }).then((r) => r.hits),
   learn: (req: { bvid: string; page?: number; title: string; artist?: string; autoplay?: boolean }) => post<{ job: Job }>('learn', req).then((r) => r.job),
-  jobs: () => get<{ jobs: Job[]; missing: string | null }>('jobs'),
+  jobs: (after = 0) => get<{ jobs: Job[]; missing: string | null; commands: Array<{ id: number; type: 'play'; songId: string }> }>(`jobs?after=${after}`),
   cancel: (id: string) => post<{ ok: boolean }>('cancel', { id }),
   imgUrl: (u: string) => `${BASE}/img?u=${encodeURIComponent(u)}`,
   assetUrl: (name: string) => `${BASE}/asset?name=${encodeURIComponent(name)}`,

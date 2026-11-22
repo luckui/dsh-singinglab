@@ -25,6 +25,8 @@ export interface PlayerState {
   learnMissing: string | null;
   /** 一条提示（学会了、没学成） */
   toast: { id: number; text: string; songId?: string } | null;
+  /** 要打开「学歌设置」（点了学歌但还没准备好） */
+  studioAsk: number;
 }
 
 type Listener = () => void;
@@ -50,11 +52,12 @@ class Engine {
   state: PlayerState = {
     songs: [], queue: [], index: -1, current: null, loading: false, playing: false,
     duration: 0, volume: readVolume(), shuffle: false, repeat: 'all', error: null,
-    jobs: [], learnMissing: null, toast: null,
+    jobs: [], learnMissing: null, toast: null, studioAsk: 0,
   };
   private jobTimer = 0;
   private seenDone = new Set<string>();
   private jobsLoaded = false;
+  private lastCommand = -1;
 
   constructor() {
     this.audio = new Audio();
@@ -73,7 +76,13 @@ class Engine {
   private pollJobs = async (): Promise<void> => {
     clearTimeout(this.jobTimer);
     try {
-      const { jobs, missing } = await api.jobs();
+      const { jobs, missing, commands } = await api.jobs(Math.max(0, this.lastCommand));
+      // 她在对话里说「放这首」：第一次轮询只记下编号，不执行以前的
+      for (const c of commands) {
+        if (this.lastCommand >= 0 && c.type === 'play') { await this.refresh(); void this.playSong(c.songId); }
+        this.lastCommand = Math.max(this.lastCommand, c.id);
+      }
+      if (this.lastCommand < 0) this.lastCommand = 0;
       const fresh = jobs.filter((j) => j.state === 'done' && !this.seenDone.has(j.id));
       const failed = jobs.filter((j) => j.state === 'failed' && !this.seenDone.has(j.id));
       for (const j of [...fresh, ...failed]) this.seenDone.add(j.id);
@@ -123,8 +132,15 @@ class Engine {
       this.notify(`开始学《${req.title}》`);
       void this.pollJobs();
     } catch (err) {
-      this.notify(`学不了：${(err as Error).message}`);
+      const msg = (err as Error).message;
+      // 还没准备好：直接把学歌设置打开，那里有一键准备
+      if (/还没准备好|还没有她的声音|还缺模型/.test(msg)) this.set({ studioAsk: Date.now() });
+      this.notify(msg);
     }
+  }
+
+  openStudio(): void {
+    this.set({ studioAsk: Date.now() });
   }
 
   async cancelJob(id: string): Promise<void> {

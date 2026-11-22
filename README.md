@@ -1,44 +1,60 @@
-# dsh-singinglab：大肥鱼唱歌实验室
+# dsh-singinglab · 大肥鱼唱歌实验室
 
-DeepSeek Harness 的一个插件：一个给大肥鱼唱歌用的音乐播放器。
+[DeepSeek Harness](https://github.com/deepseek-ai) 的一个插件：一个会动的壁纸音乐播放器，里面的大肥鱼会唱歌。
 
-现在（第一版进行中）能做的：
+跟她说想听什么，她去 B 站找到这首歌，**在你自己的电脑上**学会（把原唱换成她的声音），然后唱给你听。
 
-- 侧栏「唱歌」打开播放器，读歌库（学歌程序 prepare.py 的产物：每首一个目录，里面有 song.json 和 mix.mp3）
-- 歌库：封面网格（B 站视频封面，第一次取时缓存）、搜索、按最近学会 / 歌名排序
-- 正在播放：旋转黑胶 + 频谱环 + 小节首拍冒泡泡；封面取色的流动背景，打拍子、副歌更亮
-- 歌词：逐字填色、行间弹性滚动、远处的行变淡变糊；间奏三个点；点一行跳过去；滚轮可以翻
-- 播放控制：上一首 / 下一首 / 随机 / 循环 / 音量；空格暂停，← → 快退快进；关掉面板歌照样放
+## 最省事的装法：让 DSH 帮你装
 
-还没做：点歌、学歌（B 站找歌 → 本机学会）、跟她说想听什么。
+在 DSH 里跟她说：
 
-## 装
+> 帮我装一下 dsh-singinglab 唱歌插件，装好后把学歌也准备好。
 
-在 DSH 的 profile（`<DSH_HOME>/profiles/web/package.json`）里加上：
+她会装好插件、重启。之后侧栏有「唱歌」：打开「学歌设置」点「一键准备」；或者新建一个「大肥鱼唱歌」会话，让她自己把学歌环境装好、模型下好。中间唯一要你给的，是**她的声音**：一个 RVC 声音模型（`.pth` 文件，最好带上同名的 `.index`）。告诉她文件在哪，或者在唱歌面板的「学歌设置」里把文件拖进去。
 
-```json
-"dependencies": { "dsh-singinglab": "link:<这个目录>" },
-"dsh": { "profile": { "bundles": ["…", "dsh-singinglab"] } }
-```
+### 给 DSH 的安装步骤（AI 照着做）
 
-再把这个目录链接到 `profiles/web/node_modules/dsh-singinglab`，重启 DSH。
+1. 用插件管理工具安装 npm 包 `dsh-singinglab` 到当前 profile（命令行等价于 `dsh plugin --profile web add dsh-singinglab`），然后重启 DSH。
+2. 重启后侧栏会出现「唱歌」，新建会话时多了一个 agent 预设「大肥鱼唱歌」。下面这些工具在那个预设里（让用户新开一个「大肥鱼唱歌」会话，或者告诉用户在唱歌面板的「学歌设置」里点「一键准备」，效果一样）。调 `singinglab_status` 看还缺什么。
+3. 调 `singinglab_prepare`：它会装学歌环境（插件自己的 Python 3.11 + PyTorch，放在 `<DSH_HOME>/dsh-singinglab/engine`，不碰用户别的 Python），再下载推荐配方要的模型。全程走国内镜像，几分钟到半小时。用 `singinglab_status` 看进度。
+4. 问用户要 RVC 声音模型的路径，用 `singinglab_import_voice` 导入。
+5. 用户说想听什么：`singinglab_search` 找，`singinglab_learn` 学（学会了播放器自动放），已经会唱的用 `singinglab_play` 放。
 
-歌库默认是 `<DSH_HOME>/dsh-singinglab/songs`。要加别的目录（只读），写进 `<DSH_HOME>/dsh-singinglab/settings.json`：
+## 要什么样的电脑
 
-```json
-{ "libraries": ["D:/somewhere/songs"] }
-```
+- **显卡：** NVIDIA 显卡，显存 8 GB 以上比较稳。没有 N 卡也能学，但会非常慢。
+- **磁盘：** 学歌环境约 5 GB；推荐配方的模型约 6.3 GB，快速配方不到 1 GB。
+- **系统：** Windows 10/11 或 Linux。
 
-## 宿主端接口
+## 用起来
 
-- `GET /api/dsh-singinglab/library`：歌库列表
-- `GET /api/dsh-singinglab/song?id=…`：一首歌的歌词、节拍、段落
-- `GET /api/dsh-singinglab/audio?id=…`：mix.mp3，支持 Range
-- `GET /api/dsh-singinglab/cover?id=…`：封面
-- `GET|POST /api/dsh-singinglab/settings`：设置
+- **歌库：** 她会唱的歌。搜一首她不会的，回车，会去 B 站找；点「学这首」。
+- **播放：** 会动的壁纸。歌词映在窗玻璃上，海面随音乐闪光，夜里下雨。主题跟着系统的深色 / 浅色走，也可以在播放卡片上手动切换。
+- **学歌设置：**
+  - **一键准备：** 缺什么补什么。
+  - **她的声音：** 可以有好几个，选一个用。
+  - **高级：**
+    - 配方：推荐、快速、自定义，每一步选做法，修音高和定调可以关；
+    - 模型货架：每个模型是什么、多大、什么许可证；
+    - 从电脑里已有的模型文件导入。
+
+## 学歌的九步（配方）
+
+取音频 → 分离人声 → 拆主唱 → 去混响 → 对歌词 → 修音高（补丁）→ 定调（补丁）→ 换成她的声音 → 混音。
+
+推荐配方就是大肥鱼直播里学歌用的那一套。
+
+## 第三方和许可证
+
+- **插件本身：** MIT。
+- **`engine/`：** Applio（RVC 推理）和 Music-Source-Separation-Training（分离）的推理代码，都是 MIT，见 `engine/NOTICE.md`。
+- **模型：** 各有各的许可证，写在 `assets/catalog.json` 和学歌设置的模型货架里。
+- **B 站的音频：** 只用于你自己听，不要把学出来的歌拿去商用或二次发布。
 
 ## 开发
 
 ```bash
 node build.mjs
 ```
+
+宿主端接口见 `src/index.ts` 开头的注释。

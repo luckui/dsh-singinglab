@@ -266,6 +266,66 @@ export const CSS = `
 .sl-theme-night .sl-field input { background: rgba(160,200,255,.08); color: var(--ink); }
 .sl-theme-night .sl-minidisc-label { background: #1a2550; }
 
+/* 学歌设置 */
+.sl-studio-wrap { z-index: 9; }
+.sl-studio { width: min(620px, calc(100% - 32px)); max-height: calc(100% - 48px); overflow-y: auto; padding: 20px; border-radius: 26px;
+  background: rgba(246,250,255,.94); box-shadow: 0 30px 80px -30px rgba(20,60,140,.7); scrollbar-width: thin; }
+.sl-theme-night .sl-studio { background: rgba(16,24,54,.95); }
+.sl-studio-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.sl-studio-title { font-size: 20px; font-weight: 800; }
+.sl-studio-sub { font-size: 13px; color: var(--ink-2); margin-top: 4px; line-height: 1.5; }
+.sl-studio-card { padding: 14px 16px; border-radius: 18px; background: rgba(255,255,255,.7); box-shadow: inset 0 0 0 1px rgba(30,52,102,.08); margin-top: 12px; }
+.sl-theme-night .sl-studio-card { background: rgba(30,42,84,.55); box-shadow: inset 0 0 0 1px rgba(160,200,255,.14); }
+.sl-studio-h { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
+.sl-need { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 3px 0; }
+.sl-need em { margin-left: auto; font-style: normal; color: var(--ink-2); font-size: 12.5px; }
+.sl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sky); flex: none; }
+.sl-dot.is-voice { background: #f0a040; }
+.sl-big { width: 100%; justify-content: center; height: 48px; font-size: 15px; margin-top: 12px; }
+.sl-studio-err { margin-top: 8px; font-size: 12.5px; color: #b4233a; }
+.sl-studio-hint { margin-top: 10px; font-size: 12.5px; color: #9a5b00; background: rgba(255,226,170,.5); padding: 8px 10px; border-radius: 10px; }
+.sl-steps { margin-top: 12px; display: grid; gap: 6px; }
+.sl-step { position: relative; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+.sl-step-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(30,52,102,.18); flex: none; }
+.sl-step.is-done { color: var(--ink); } .sl-step.is-done .sl-step-dot { background: #3cb371; }
+.sl-step.is-running { color: var(--ink); } .sl-step.is-running .sl-step-dot { background: var(--sky); animation: sl-breathe 1.2s ease-in-out infinite; }
+.sl-step.is-failed { color: #b4233a; } .sl-step.is-failed .sl-step-dot { background: #e0485e; }
+.sl-step-detail { color: var(--ink-3); font-size: 12px; }
+.sl-step .sl-job-bar { flex-basis: 100%; margin-left: 18px; }
+.sl-voices { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.sl-voice { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 99px; font-size: 13px; background: rgba(30,52,102,.06); }
+.sl-voice.is-on { background: linear-gradient(145deg, #4a9bff, #2f63c9); color: #fff; }
+.sl-voice em { font-style: normal; opacity: .7; }
+.sl-drop { display: block; position: relative; padding: 18px; border-radius: 14px; text-align: center; font-size: 13px; color: var(--ink-2); cursor: pointer;
+  border: 1.5px dashed rgba(61,139,255,.45); background: rgba(61,139,255,.05); }
+.sl-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.sl-adv-toggle { margin-top: 14px; font-size: 13px; color: var(--sky); }
+.sl-recipes { display: inline-flex; margin-bottom: 4px; }
+.sl-chain { display: grid; gap: 8px; margin-top: 10px; }
+.sl-link { display: grid; grid-template-columns: 22px 120px 1fr; gap: 4px 10px; align-items: center; font-size: 13.5px; }
+.sl-link-n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; background: rgba(61,139,255,.14); color: var(--sky); font-weight: 700; }
+.sl-link-name { font-weight: 650; }
+.sl-patch { font-style: normal; font-size: 11px; margin-left: 6px; padding: 1px 6px; border-radius: 99px; background: rgba(240,160,64,.18); color: #b26a00; }
+.sl-link-ctl select { width: 100%; height: 32px; border-radius: 10px; border: 0; padding: 0 8px; font: inherit; font-size: 13px; color: var(--ink); background: rgba(30,52,102,.06); }
+.sl-link-fixed { color: var(--ink-3); }
+.sl-link-why { grid-column: 2 / 4; font-size: 12px; color: var(--ink-3); margin-top: -2px; }
+.sl-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+.sl-switch input { opacity: 0; width: 0; height: 0; }
+.sl-switch i { position: absolute; inset: 0; border-radius: 99px; background: rgba(30,52,102,.2); transition: background .2s; }
+.sl-switch i::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s var(--ease); }
+.sl-switch input:checked + i { background: var(--sky); }
+.sl-switch input:checked + i::after { transform: translateX(18px); }
+.sl-shelf-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(30,52,102,.06); }
+.sl-shelf-text { flex: 1; min-width: 0; }
+.sl-shelf-name { font-weight: 650; font-size: 13.5px; }
+.sl-shelf-name em { font-style: normal; font-weight: 400; color: var(--ink-3); font-size: 12px; }
+.sl-shelf-note { font-size: 12px; color: var(--ink-2); }
+.sl-shelf-ok { font-size: 12.5px; color: #3cb371; flex: none; }
+.sl-import { display: flex; gap: 8px; margin-top: 10px; }
+.sl-import input { flex: 1; height: 36px; border-radius: 10px; border: 0; padding: 0 10px; font: inherit; font-size: 13px; color: var(--ink); background: rgba(30,52,102,.06); }
+.sl-studio-btn { position: relative; height: 36px; padding: 0 14px; font-size: 13px; }
+.sl-badge { position: absolute; top: 4px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #f0a040; }
+
 /* ── 歌库 ── */
 .sl-library { position: absolute; inset: 0; }
 .sl-lib-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: 0 clamp(18px, 3.2cqw, 48px);

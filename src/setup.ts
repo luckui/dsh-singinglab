@@ -89,8 +89,11 @@ export class Setup {
       });
       await this.step('torch', async () => {
         const flavor = !this.gpu ? 'cpu' : Number(this.gpu.driver.split('.')[0]) >= 570 ? 'cu128' : 'cu126';
+        // 已经装了对的那种就跳过；装错了（比如以前没认出显卡、装成了 CPU 版）就换掉
+        const have = await run(this.python, ['-c', 'import torch; print(torch.__version__)'], env).then((o) => o.trim(), () => '');
+        if (have.startsWith(TORCH) && have.includes(`+${flavor}`)) return `PyTorch ${have}（已经有了）`;
         const pkgs = [`torch==${TORCH}`, `torchaudio==${TORCH}`];
-        const base = ['pip', 'install', '--python', this.python, ...pkgs];
+        const base = ['pip', 'install', '--python', this.python, ...pkgs, ...(have ? ['--reinstall-package', 'torch', '--reinstall-package', 'torchaudio'] : [])];
         try {
           await run(this.uv, [...base, '--index-url', `https://download.pytorch.org/whl/${flavor}`], env);
         } catch {
@@ -175,14 +178,21 @@ ok = torch.cuda.is_available()
 print(json.dumps({"torch": torch.__version__, "cuda": ok, "device": torch.cuda.get_device_name(0) if ok else None}))
 `;
 
+/** nvidia-smi 不一定在 PATH 里：WSL 在 /usr/lib/wsl/lib，Windows 在 System32 */
+const NVIDIA_SMI = ['nvidia-smi', '/usr/lib/wsl/lib/nvidia-smi', 'C:\\Windows\\System32\\nvidia-smi.exe', 'C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvidia-smi.exe'];
+
 async function detectGpu(): Promise<Gpu | null> {
-  try {
-    const out = await run('nvidia-smi', ['--query-gpu=name,memory.total,driver_version', '--format=csv,noheader,nounits'], process.env);
-    const [name, mem, driver] = out.trim().split('\n')[0].split(',').map((s) => s.trim());
-    return { name, memoryMB: Number(mem) || 0, driver };
-  } catch {
-    return null;
+  for (const smi of NVIDIA_SMI) {
+    try {
+      const out = await run(smi, ['--query-gpu=name,memory.total,driver_version', '--format=csv,noheader,nounits'], process.env);
+      const rows = out.trim().split(/\r?\n/).map((l) => l.split(',').map((x) => x.trim()));
+      // 设了 CUDA_VISIBLE_DEVICES 就看它指的那一块
+      const pick = Number(process.env.CUDA_VISIBLE_DEVICES?.split(',')[0]);
+      const [name, mem, driver] = rows[Number.isInteger(pick) && rows[pick] ? pick : 0];
+      if (name) return { name, memoryMB: Number(mem) || 0, driver };
+    } catch { /* 换下一个位置 */ }
   }
+  return null;
 }
 
 /** 跑一个命令，成功返回输出；失败带上最后几行 */

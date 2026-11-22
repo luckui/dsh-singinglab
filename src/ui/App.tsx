@@ -1,10 +1,11 @@
 /** 播放器页面：歌库 ⇄ 正在播放。两页共用一张场景插画：播放页是清楚的画，歌库页是磨砂过的同一张画。 */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { getEngine } from './engine';
 import { LearnPill, Toast } from './Learning';
 import { Library } from './Library';
+import { StudioPanel } from './Studio';
 import { NowPlaying } from './NowPlaying';
 import type { SceneSpec, Theme } from './scene';
 
@@ -60,6 +61,9 @@ export function App() {
   const engine = getEngine();
   const [view, setView] = useState<'library' | 'now'>(() => (engine.state.current ? 'now' : 'library'));
   const [theme, pref, cycleTheme] = useTheme();
+  const [studioOpen, setStudioOpen] = useState(false);
+  const studioAsk = useSyncExternalStore(engine.subscribe, () => engine.state.studioAsk);
+  useEffect(() => { if (studioAsk) setStudioOpen(true); }, [studioAsk]);
   const spec = useScene(theme);
 
   useEffect(() => { void engine.refresh(); engine.startJobs(); }, [engine]);
@@ -95,6 +99,7 @@ export function App() {
         <LearnPill />
       </div>
       <Toast />
+      <StudioPanel open={studioOpen} onClose={() => setStudioOpen(false)} />
     </div>
   );
 }

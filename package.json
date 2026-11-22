@@ -6,11 +6,12 @@
   "license": "MIT",
   "exports": {
     ".": "./lib/index.js",
+    "./agent": "./lib/agent.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "main": "./lib/index.js",
-  "files": ["lib", "assets", "cordis.patch.yml", "README.md"],
+  "files": ["lib", "assets", "engine", "cordis.patch.yml", "README.md"],
   "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "music-player", "singing", "rvc"],
   "dsh": {
     "bundle": {

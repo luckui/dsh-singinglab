@@ -74,6 +74,9 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
       <header className="sl-lib-head">
         <div className="sl-lib-title">全部歌曲</div>
         <div className="sl-lib-tools">
+          <button className="sl-btn sl-studio-btn" onClick={() => engine.openStudio()} title="学歌设置：环境、她的声音、配方">
+            <Icon name="gear" size={16} /> 学歌设置{s.learnMissing ? <span className="sl-badge" /> : null}
+          </button>
           <label className="sl-search">
             <Icon name="search" size={18} />
             <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void searchBili(); }} placeholder="找歌，回车也去 B 站找" />

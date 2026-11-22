@@ -34,6 +34,7 @@ import { Learner } from './learner';
 import type { RecipeChoice } from './recipe';
 import { loadCatalog } from './shelf';
 import { Studio } from './studio';
+import { runtime } from './runtime';
 import { Library, validId } from './library';
 
 export const name = 'dsh-singinglab';
@@ -150,7 +151,9 @@ export function apply(ctx: HostContext): void {
       plan: (out) => st.plan(out),
       onChange: () => {},
     });
+    Object.assign(runtime, { studio, learner, library, bili });
   })();
+  runtime.ready = ready;
   ctx.effect(() => () => learner?.close(), 'dsh-singinglab learner');
 
   const route = (path: string, methods: string[], fetch: (request: Request) => Response | Promise<Response>) =>
@@ -249,7 +252,11 @@ export function apply(ctx: HostContext): void {
     return json({ ok: true, job });
   });
 
-  route('/api/dsh-singinglab/jobs', ['GET'], async () => json({ ok: true, jobs: learner?.jobs ?? [], missing: await studio!.check() }));
+  route('/api/dsh-singinglab/jobs', ['GET'], async (request) => {
+    // 网页带上它已经执行过的最后一条指令编号，这里只给新的（她说「放这首」）
+    const after = Number(new URL(request.url).searchParams.get('after') ?? 0);
+    return json({ ok: true, jobs: learner?.jobs ?? [], missing: await studio!.check(), commands: runtime.commands.filter((c) => c.id > after) });
+  });
 
   // ── 学歌准备 ──
   route('/api/dsh-singinglab/studio', ['GET'], async () => json({ ok: true, ...(await studio!.status()) }));
