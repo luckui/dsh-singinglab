@@ -3,7 +3,7 @@
  * 一个 <audio> 放歌；第一次播放时接上 WebAudio 分析器，给背景和光晕读低频能量。
  */
 
-import { api, type SongDetail, type SongSummary } from './api';
+import { api, type Job, type SongDetail, type SongSummary } from './api';
 
 export type Repeat = 'off' | 'all' | 'one';
 
@@ -19,6 +19,12 @@ export interface PlayerState {
   shuffle: boolean;
   repeat: Repeat;
   error: string | null;
+  /** 学歌任务（正在学、排队、最近学完） */
+  jobs: Job[];
+  /** 学歌还缺什么设置；null = 能学 */
+  learnMissing: string | null;
+  /** 一条提示（学会了、没学成） */
+  toast: { id: number; text: string; songId?: string } | null;
 }
 
 type Listener = () => void;
@@ -44,7 +50,11 @@ class Engine {
   state: PlayerState = {
     songs: [], queue: [], index: -1, current: null, loading: false, playing: false,
     duration: 0, volume: readVolume(), shuffle: false, repeat: 'all', error: null,
+    jobs: [], learnMissing: null, toast: null,
   };
+  private jobTimer = 0;
+  private seenDone = new Set<string>();
+  private jobsLoaded = false;
 
   constructor() {
     this.audio = new Audio();
@@ -57,6 +67,73 @@ class Engine {
     this.audio.addEventListener('error', () => {
       if (this.state.current) this.set({ error: '这首放不出来（音频读不到）', playing: false });
     });
+  }
+
+  /** 学歌状态：有在学的每 1.5 秒问一次，没有就 8 秒一次 */
+  private pollJobs = async (): Promise<void> => {
+    clearTimeout(this.jobTimer);
+    try {
+      const { jobs, missing } = await api.jobs();
+      const fresh = jobs.filter((j) => j.state === 'done' && !this.seenDone.has(j.id));
+      const failed = jobs.filter((j) => j.state === 'failed' && !this.seenDone.has(j.id));
+      for (const j of [...fresh, ...failed]) this.seenDone.add(j.id);
+      this.set({ jobs, learnMissing: missing });
+      // 第一次拉到的是以前的记录，不提示
+      if (this.jobsLoaded) {
+        for (const j of failed) this.notify(`《${j.title}》没学成：${j.reason ?? ''}`);
+        if (fresh.length) {
+          await this.refresh();
+          const last = fresh[fresh.length - 1];
+          if (last.autoplay) this.playLearned(last.id, last.title);
+          else this.notify(`学会了《${last.title}》`, last.id);
+        }
+      }
+      this.jobsLoaded = true;
+    } catch { /* 下次再问 */ }
+    const active = this.state.jobs.some((j) => j.state === 'running' || j.state === 'queued');
+    this.jobTimer = window.setTimeout(this.pollJobs, active ? 1500 : 8000);
+  };
+
+  notify(text: string, songId?: string): void {
+    this.set({ toast: { id: Date.now(), text, ...(songId ? { songId } : {}) } });
+  }
+
+  /** 学会了：没在放歌就直接放；正在放就排到下一首，提示一下 */
+  private playLearned(id: string, title: string): void {
+    if (!this.state.playing) {
+      void this.playSong(id);
+      this.notify(`学会了《${title}》，唱给你听`);
+      return;
+    }
+    this.playNext(id);
+    this.notify(`学会了《${title}》，这首放完就唱`, id);
+  }
+
+  /** 插到当前这首后面 */
+  playNext(id: string): void {
+    const queue = this.state.queue.filter((x) => x !== id);
+    const at = Math.max(0, queue.indexOf(this.state.queue[this.state.index]));
+    queue.splice(at + 1, 0, id);
+    this.set({ queue, index: at });
+  }
+
+  async learn(req: { bvid: string; page?: number; title: string; artist?: string }): Promise<void> {
+    try {
+      await api.learn({ ...req, autoplay: true });
+      this.notify(`开始学《${req.title}》`);
+      void this.pollJobs();
+    } catch (err) {
+      this.notify(`学不了：${(err as Error).message}`);
+    }
+  }
+
+  async cancelJob(id: string): Promise<void> {
+    await api.cancel(id).catch(() => {});
+    void this.pollJobs();
+  }
+
+  startJobs(): void {
+    if (!this.jobTimer) void this.pollJobs();
   }
 
   subscribe = (fn: Listener) => {

@@ -1,0 +1,172 @@
+"""歌词：按歌名在网易云搜几版，先核对词是不是她唱的这首，再挑「行首最对得上这份干声起唱」的那一版，对齐到我们的音频，算出每个字的起唱时间。
+
+规则（都只看这首歌自己的干声）：
+- 候选：歌名去掉括号里的说明去搜，取前 12 个，歌名对不上的不要，取不到逐行时间的不要；「歌名 - 歌手」这种标题行去掉。
+- 核对词：语音识别听干声前两分半，听出来的词（中日文相邻两字、英文相邻两词）在这版歌词里占不到 MIN_TEXT 的，是同名的别的歌，不要。
+- 对时间：整体平移歌词（±20 秒，步长 0.05 秒），看有多少行的行首落在人声起音 ±0.15 秒内；取最好的平移，这个比例就是分数。
+- 选用：词对上的版本里时间分数最高的那版；分数不到 MIN_HIT 就当没找到，宁可不出字幕也不出错位、错歌的字幕。
+- 每行：行首吸到 ±0.6 秒内最近的音节起音；行尾是下一行之前最后有人声的地方。
+- 每个字：行内有人声的时间排成一条轴，字均匀落在上面，再吸到 ±0.12 秒内最近的音节起音。中日文一字一个，英文一词一个。
+出任何错都返回空，学歌照常完成。
+"""
+
+import json
+import re
+import urllib.parse
+import urllib.request
+
+import librosa
+import numpy as np
+
+API = "https://music.163.com/api"
+SR = 16000
+HOP = 160                  # 10 毫秒一帧
+CANDIDATES = 12
+MIN_HIT = 0.5              # 至少一半的行首对得上起音才用
+# 听出来的词至少有几成在这份歌词里：曲库实测，对的歌中日文 8%–83%、英文 24%–84%，同名别的歌中日文 ≤1%、英文 ≤6%
+MIN_TEXT = {"cjk": 0.05, "latin": 0.15}
+
+
+def get(url: str) -> dict:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://music.163.com/"})
+    return json.loads(urllib.request.urlopen(req, timeout=10).read())
+
+
+def bare(title: str) -> str:
+    """歌名去掉括号里的说明、首尾符号，用来搜和比"""
+    t = re.sub(r"[（(【\[《「『].*?[）)】\]》」』]", "", title)
+    return re.sub(r"\s+", " ", t).strip(" -_~·").lower()
+
+
+def same_name(want: str, got: str) -> bool:
+    a, b = bare(want), bare(got)
+    return bool(a and b) and (a in b or b in a)
+
+
+def parse_lrc(text: str) -> list[list]:
+    """[[秒, 这一行]]，去掉作词、编曲这类署名行和空行"""
+    lines = []
+    for raw in text.splitlines():
+        stamps = re.findall(r"\[(\d+):(\d+(?:\.\d+)?)\]", raw)
+        words = re.sub(r"\[[^\]]*\]", "", raw).strip()
+        if not stamps or not words or re.match(r"^[^:：]{1,10}\s*[:：]", words):
+            continue
+        for m, s in stamps:                       # 一行前面挂好几个时间的是重复段落
+            lines.append([int(m) * 60 + float(s), words])
+    return sorted(lines)
+
+
+def tokens(text: str) -> list[str]:
+    """中日文一个字一个单位，英文、数字一个词一个单位（带着后面的空格，排版时好拼回去）"""
+    return re.findall(r"[A-Za-z0-9'’]+\s*|[^\sA-Za-z0-9'’]\s*", text)
+
+
+def features(dry: np.ndarray, sr: int) -> dict:
+    y = librosa.resample(dry, orig_sr=sr, target_sr=SR) if sr != SR else dry
+    rms = librosa.feature.rms(y=y, frame_length=640, hop_length=HOP)[0]
+    voiced = rms > .1 * (np.percentile(rms, 95) or 1)
+    env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=HOP)
+    peaks = librosa.onset.onset_detect(onset_envelope=env, sr=SR, hop_length=HOP, units="time", backtrack=True)
+    return {"voiced": voiced, "rises": np.flatnonzero(voiced[1:] & ~voiced[:-1]) + 1, "peaks": np.asarray(peaks, float)}
+
+
+def fit(lines: list[list], f: dict) -> tuple[float, float]:
+    """最好的整体平移，和这时有几成行首落在起音 ±0.15 秒内。挑平移按离起音多近打软分，对得一样多时取最准的那个"""
+    starts = np.array([s for s, _ in lines]) * 100; rises = f["rises"]
+    if not len(rises):
+        return 0.0, 0.0
+    def dist(idx):
+        j = np.clip(np.searchsorted(rises, idx), 1, len(rises) - 1)
+        return np.minimum(np.abs(rises[j] - idx), np.abs(rises[j - 1] - idx))
+    best, score = 0.0, -1.0
+    for off in np.arange(-20, 20, .05):
+        d = dist(starts + off * 100)
+        sc = float(np.clip(1 - d / 15, 0, 1).mean())
+        if sc > score:
+            best, score = float(off), sc
+    return round(best, 2), round(float((dist(starts + best * 100) <= 15).mean()), 3)
+
+
+def timed(lines: list[list], off: float, f: dict) -> list[dict]:
+    voiced, peaks = f["voiced"], f["peaks"]
+    fr = lambda t: max(0, int(round(t * 100)))
+    out = []
+    for i, (s, text) in enumerate(lines):
+        s += off
+        nxt = lines[i + 1][0] + off if i + 1 < len(lines) else len(voiced) / 100
+        near = peaks[np.abs(peaks - s) < .6]
+        if len(near):
+            s = max(float(near[np.argmin(np.abs(near - s))]), out[-1]["end"] if out else 0.0)
+        v = np.where(voiced[fr(s):fr(nxt - .05)])[0]
+        e = s + (v[-1] + 1) / 100 if len(v) else min(nxt, s + 2)
+        if e - s < .4 * (nxt - s):            # 干声里这句太轻（哼唱、和声），按歌词表的行长算
+            e, v = nxt - .1, np.array([], int)
+        axis = s + v / 100 if len(v) else np.linspace(s, e, 10)
+        toks, at = tokens(text), []
+        for k in range(len(toks)):
+            t = float(axis[min(len(axis) - 1, int(k / len(toks) * len(axis)))])
+            snap = peaks[(np.abs(peaks - t) < .12) & (peaks >= s - .01) & (peaks < e)]
+            at.append(float(snap[np.argmin(np.abs(snap - t))]) if len(snap) else t)
+        at = np.maximum.accumulate(at) if at else at
+        out.append({"start": round(float(s), 3), "end": round(float(e), 3), "text": text, "tokens": toks, "at": [round(float(x), 3) for x in at]})
+    return out
+
+
+def units(text: str) -> tuple[set, set]:
+    """（中日文相邻两个字，英文相邻两个词）：去标点、统一小写。常见单词谁都会撞上，所以英文看词对"""
+    t = text.lower()
+    words = re.findall(r"[^\W_぀-ヿ㐀-鿿]+", t)      # 拉丁、俄文、韩文……按词
+    cjk = re.sub(r"[^぀-ヿ㐀-鿿]", "", t)
+    return {cjk[i:i + 2] for i in range(len(cjk) - 1)}, {" ".join(words[i:i + 2]) for i in range(len(words) - 1)}
+
+
+def text_score(heard: str, lyric: str) -> tuple[float, str]:
+    """听到的词里有几成出现在这份歌词里；按听到的是中日文还是英文分开算"""
+    hc, hl = units(heard)
+    lc, ll = units(lyric)
+    if len(hc) >= len(hl):
+        return round(len(hc & lc) / max(1, len(hc)), 3), "cjk"
+    return round(len(hl & ll) / max(1, len(hl)), 3), "latin"
+
+
+def transcribe(y16k: np.ndarray, model_path: str, seconds: float = 150) -> str:
+    """听前两分半唱了什么（只用来核对是不是这首歌，不用它的时间）"""
+    from faster_whisper import WhisperModel
+    model = WhisperModel(model_path, device="cuda", compute_type="float16")
+    segs, _ = model.transcribe(y16k[:int(seconds * SR)].astype(np.float32), vad_filter=True, beam_size=1)
+    return " ".join(s.text for s in segs)
+
+
+def pick(title: str, f: dict, heard: str, search=None, lyric=None) -> tuple[list[dict], dict]:
+    """搜、核对、挑、对齐；返回 (lyrics, 报告)。heard 是这首歌里听出来的词。search / lyric 可替换成假的，测试用"""
+    search = search or (lambda q: get(f"{API}/search/get?s={urllib.parse.quote(q)}&type=1&limit={CANDIDATES}").get("result", {}).get("songs", []))
+    lyric = lyric or (lambda sid: get(f"{API}/song/lyric?id={sid}&lv=1&tv=-1").get("lrc", {}).get("lyric", ""))
+    q = bare(title)
+    if not q:
+        return [], {"found": False, "reason": "没有歌名"}
+    if not sum(map(len, units(heard))):
+        return [], {"found": False, "reason": "人声里听不出词，没法核对是哪一版歌词"}
+    named, best = [], None
+    for c in search(q)[:CANDIDATES]:
+        if not same_name(title, c.get("name", "")):
+            continue
+        lines = [l for l in parse_lrc(lyric(c["id"]) or "") if not (" - " in l[1] and q in bare(l[1]))]
+        if len(lines) < 4:
+            continue
+        words, kind = text_score(heard, " ".join(w for _, w in lines))
+        named.append(words)
+        if words < MIN_TEXT[kind]:
+            continue
+        off, hit = fit(lines, f)
+        if not best or hit > best[0]:
+            best = (hit, off, lines, c, words)
+    if not named:
+        return [], {"found": False, "reason": "网易云没有对得上歌名、带时间的歌词"}
+    if not best:
+        return [], {"found": False, "reason": f"网易云同名的歌词和她唱的词对不上（最多重合 {round(max(named) * 100)}%）"}
+    hit, off, lines, c, words = best
+    report = {"found": hit >= MIN_HIT, "id": c["id"], "name": c.get("name"), "artist": "/".join(a.get("name", "") for a in c.get("artists", [])), "offsetSec": off, "hit": hit, "words": words}
+    if hit < MIN_HIT:
+        report["reason"] = f"词对上了，但这一版只有 {round(hit * 100)}% 的行对得上起唱，不用"
+        return [], report
+    return timed(lines, off, f), report

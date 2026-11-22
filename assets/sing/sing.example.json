@@ -1,0 +1,18 @@
+{
+  "msstPython": "D:/Software/MSST/.venv/python.exe",
+  "msstDir": "D:/Software/MSST",
+  "separator": {
+    "type": "bs_roformer",
+    "config": "D:/Software/MSST/checkpoints/bs_polarformer_v1.0.20/model_bs_polarformer_float16.yaml",
+    "checkpoint": "D:/Software/MSST/checkpoints/bs_polarformer_v1.0.20/model_bs_polarformer_float16.ckpt"
+  },
+  "karaoke": { "type": "mel_band_roformer", "config": "path/to/config_karaoke_becruily.yaml", "checkpoint": "path/to/mel_band_roformer_karaoke_becruily.ckpt" },
+  "dereverb": { "type": "mel_band_roformer", "config": "path/to/dereverb_mel_band_roformer_anvuew.yaml", "checkpoint": "path/to/dereverb.ckpt" },
+  "rvcPython": "path/to/applio/env/python.exe",
+  "applioDir": "path/to/applio",
+  "rvcModel": "path/to/voice.pth",
+  "rvcIndex": "path/to/voice.index",
+  "whisperModel": "path/to/faster-whisper-large-v3",
+  "indexRate": 0.3,
+  "protect": 0.33
+}

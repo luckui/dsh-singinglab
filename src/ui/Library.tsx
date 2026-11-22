@@ -1,7 +1,7 @@
 /** 歌库：搜索、排序、封面网格；底下一条迷你播放条，点它回到正在播放。 */
 
 import React, { useDeferredValue, useMemo, useState, useSyncExternalStore } from 'react';
-import { api, type SongSummary } from './api';
+import { api, type Hit, type SongSummary } from './api';
 import { getEngine } from './engine';
 import { Icon } from './icons';
 
@@ -25,6 +25,18 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
   }, [s.songs, q, sort]);
 
   const currentId = s.current?.id ?? s.queue[s.index];
+  const [bili, setBili] = useState<{ q: string; hits: Hit[] | null; error?: string } | null>(null);
+  const [picking, setPicking] = useState<Hit | null>(null);
+  const searchBili = async (text = query) => {
+    const t = text.trim();
+    if (!t) return;
+    setBili({ q: t, hits: null });
+    try {
+      setBili({ q: t, hits: await api.search(t) });
+    } catch (err) {
+      setBili({ q: t, hits: [], error: (err as Error).message });
+    }
+  };
   const play = (song: SongSummary) => {
     if (song.id === currentId) {
       onOpenNow();
@@ -64,7 +76,7 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
         <div className="sl-lib-tools">
           <label className="sl-search">
             <Icon name="search" size={18} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="找歌名、歌手、UP 主" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void searchBili(); }} placeholder="找歌，回车也去 B 站找" />
           </label>
           <div className="sl-seg" role="tablist">
             <button className={sort === 'recent' ? 'is-on' : ''} onClick={() => setSort('recent')}>最近学会</button>
@@ -75,7 +87,13 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
 
       {s.error && !s.songs.length ? <div className="sl-empty">{s.error}</div> : null}
       {!s.error && !s.songs.length ? <div className="sl-empty">歌库还是空的</div> : null}
-      {q && !shown.length ? <div className="sl-empty">没找到「{query}」</div> : null}
+      {q ? (
+        <div className="sl-bili-bar">
+          <span>{shown.length ? `她会唱的里有 ${shown.length} 首` : `她还不会唱「${query}」`}</span>
+          <button className="sl-btn sl-btn-primary" onClick={() => void searchBili()}><Icon name="search" size={16} /> 去 B 站找「{query.trim()}」让她学</button>
+        </div>
+      ) : null}
+      {bili ? <BiliResults result={bili} onClose={() => setBili(null)} onPick={setPicking} /> : null}
 
       <div className="sl-grid">
         {shown.map((song) => (
@@ -85,7 +103,75 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
       <div className="sl-lib-pad" />
       </div>
       <MiniBar onOpen={onOpenNow} />
+      {picking ? <LearnConfirm hit={picking} onClose={() => setPicking(null)} /> : null}
     </div>
+  );
+}
+
+/** 确认歌名（对歌词要用），再开始学 */
+function LearnConfirm({ hit, onClose }: { hit: Hit; onClose: () => void }) {
+  const engine = getEngine();
+  const [title, setTitle] = useState(hit.guess);
+  const [artist, setArtist] = useState('');
+  return (
+    <div className="sl-modal" onClick={onClose}>
+      <div className="sl-modal-card" onClick={(e) => e.stopPropagation()}>
+        <img className="sl-modal-cover" src={api.imgUrl(hit.cover)} alt="" />
+        <div className="sl-modal-title">让她学这首</div>
+        <div className="sl-modal-sub">{hit.title} · {hit.up}</div>
+        <label className="sl-field"><span>歌名</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="对歌词要用，写准一点" autoFocus /></label>
+        <label className="sl-field"><span>歌手</span><input value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="可以不填" /></label>
+        <div className="sl-modal-actions">
+          <button className="sl-btn" onClick={onClose}>算了</button>
+          <button className="sl-btn sl-btn-primary" disabled={!title.trim()} onClick={() => { void engine.learn({ bvid: hit.bvid, page: hit.page, title: title.trim(), artist: artist.trim() }); onClose(); }}>
+            开始学（学会了就唱给你听）
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** B 站搜出来的视频：点「学这首」先确认歌名（对歌词要用），再开始学 */
+function BiliResults({ result, onClose, onPick }: { result: { q: string; hits: Hit[] | null; error?: string }; onClose: () => void; onPick: (h: Hit) => void }) {
+  const engine = getEngine();
+  const s = useSyncExternalStore(engine.subscribe, engine.getState);
+  const learned = new Set(s.songs.map((x) => x.id));
+  const learning = new Set(s.jobs.filter((j) => j.state === 'queued' || j.state === 'running').map((j) => j.id));
+  const fmt = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+  const views = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}万` : String(n));
+  return (
+    <section className="sl-bili">
+      <div className="sl-bili-head">
+        <div className="sl-lib-title">B 站上的「{result.q}」</div>
+        <button className="sl-ctl sl-small" onClick={onClose} title="收起"><Icon name="close" size={18} /></button>
+      </div>
+      {s.learnMissing ? <div className="sl-bili-warn">学歌还没设置好：{s.learnMissing}</div> : null}
+      {result.hits === null ? <div className="sl-empty">在 B 站找……</div> : null}
+      {result.error ? <div className="sl-empty">{result.error}</div> : null}
+      {result.hits && !result.hits.length && !result.error ? <div className="sl-empty">B 站上也没搜到</div> : null}
+      <div className="sl-grid">
+        {(result.hits ?? []).map((h) => {
+          const id = `${h.bvid}-p${h.page}`;
+          const state = learned.has(id) ? 'learned' : learning.has(id) ? 'learning' : '';
+          return (
+            <div key={id} className="sl-card-item sl-hit">
+              <div className="sl-card-cover">
+                <img src={api.imgUrl(h.cover)} alt="" loading="lazy" />
+                <span className="sl-card-tag">{fmt(h.durationSec)}{h.views ? ` · ${views(h.views)}播放` : ''}</span>
+              </div>
+              <div className="sl-card-title" title={h.title}>{h.title}</div>
+              <div className="sl-card-sub">{h.up}</div>
+              {state === 'learned'
+                ? <button className="sl-btn sl-hit-btn" onClick={() => void engine.playSong(id)}><Icon name="play" size={15} /> 她会唱，听听</button>
+                : state === 'learning'
+                  ? <button className="sl-btn sl-hit-btn" disabled>正在学……</button>
+                  : <button className="sl-btn sl-btn-primary sl-hit-btn" onClick={() => onPick(h)}><Icon name="note" size={15} /> 学这首</button>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

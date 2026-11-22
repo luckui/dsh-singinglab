@@ -6,6 +6,10 @@
  *   GET  /api/dsh-singinglab/audio?id=…       她唱的混音 mix.mp3，支持 Range（拖进度条）
  *   GET  /api/dsh-singinglab/cover?id=…       封面（B 站视频封面，第一次取时缓存到本地）
  *   GET  /api/dsh-singinglab/settings         设置；POST 同路径改设置
+ *   POST /api/dsh-singinglab/search  {q}      在 B 站搜视频（q 是 BV 号或链接时直接给那个视频）
+ *   POST /api/dsh-singinglab/learn   {bvid, page?, title, artist?, autoplay?}   学一首（排队）
+ *   GET  /api/dsh-singinglab/jobs             学歌进度：正在学的、排队的、最近学完的
+ *   POST /api/dsh-singinglab/cancel  {id}     取消一首
  *
  * 数据目录：DSH_HOME/dsh-singinglab。歌库目录默认是其中的 songs，设置里可以再加别的目录（只读）。
  */
@@ -16,7 +20,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { Bili, guessTitle, parseVideoRef } from './bili';
 import { Covers } from './covers';
+import { Learner } from './learner';
 import { Library, validId } from './library';
 
 export const name = 'dsh-singinglab';
@@ -30,7 +36,17 @@ interface HostContext {
 export interface Settings {
   /** 额外的歌库目录（只读），排在自己的 songs 后面 */
   libraries: string[];
+  /** 学歌：装好 librosa、torch 的 Python */
+  python: string;
+  /** 学歌：sing.json（分离、拆主唱、去混响、RVC、whisper 模型的路径） */
+  config: string;
+  /** 学歌放到另一台机器：user@host:port；空 = 在本机学 */
+  remote: string;
+  /** 最长学几秒的歌 */
+  maxSec: number;
 }
+
+const DEFAULTS: Settings = { libraries: [], python: '', config: '', remote: '', maxSec: 600 };
 
 const dataDir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-singinglab');
 /** lib/index.js 旁边的 ../assets */
@@ -42,13 +58,23 @@ const settingsFile = join(dataDir, 'settings.json');
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 
+function normalize(raw: any): Settings {
+  const str = (v: unknown, d: string) => (typeof v === 'string' ? v.trim() : d);
+  return {
+    libraries: Array.isArray(raw?.libraries) ? raw.libraries.filter((d: unknown) => typeof d === 'string' && d.trim()) : DEFAULTS.libraries,
+    python: str(raw?.python, DEFAULTS.python),
+    config: str(raw?.config, DEFAULTS.config),
+    remote: str(raw?.remote, DEFAULTS.remote),
+    maxSec: Number(raw?.maxSec) > 0 ? Number(raw.maxSec) : DEFAULTS.maxSec,
+  };
+}
+
 async function readSettings(): Promise<Settings> {
   try {
     // Windows PowerShell 写的文件常带 BOM
-    const raw = JSON.parse((await readFile(settingsFile, 'utf8')).replace(/^﻿/, ''));
-    return { libraries: Array.isArray(raw.libraries) ? raw.libraries.filter((d: unknown) => typeof d === 'string' && d.trim()) : [] };
+    return normalize(JSON.parse((await readFile(settingsFile, 'utf8')).replace(/^\uFEFF/, '')));
   } catch {
-    return { libraries: [] };
+    return { ...DEFAULTS };
   }
 }
 
@@ -73,14 +99,24 @@ async function serveFile(request: Request, file: string, type: string): Promise<
 }
 
 export function apply(ctx: HostContext): void {
-  let settings: Settings = { libraries: [] };
+  let settings: Settings = { ...DEFAULTS };
   const library = new Library(libraryDirs(settings));
   const covers = new Covers(join(dataDir, 'covers'));
+  const bili = new Bili();
+  let learner: Learner | null = null;
   const ready = (async () => {
     await mkdir(join(dataDir, 'songs'), { recursive: true }).catch(() => {});
     settings = await readSettings();
     library.setDirs(libraryDirs(settings));
+    learner = new Learner(bili, {
+      songsDir: join(dataDir, 'songs'),
+      stateFile: join(dataDir, 'jobs.json'),
+      script: join(assetsDir, 'sing', 'prepare.py'),
+      settings: () => settings,
+      onChange: () => {},
+    });
   })();
+  ctx.effect(() => () => learner?.close(), 'dsh-singinglab learner');
 
   const route = (path: string, methods: string[], fetch: (request: Request) => Response | Promise<Response>) =>
     ctx.effect(() => ctx.connection.fetch.register({
@@ -116,7 +152,9 @@ export function apply(ctx: HostContext): void {
     const id = idOf(request);
     if (!validId(id)) return json({ ok: false, error: 'bad id' }, 400);
     const song = await library.detail(id);
-    const bytes = song?.bvid ? await covers.get(song.bvid) : null;
+    // 还在学的歌（歌库里还没有）也给封面：id 就是 <BV号>-p<分P>
+    const bvid = song?.bvid ?? /^(BV[0-9A-Za-z]{10})-p\d+$/.exec(id)?.[1] ?? null;
+    const bytes = bvid ? await covers.get(bvid) : null;
     if (!bytes) return new Response(null, { status: 404, headers: { 'cache-control': 'no-store' } });
     return new Response(bytes as Uint8Array<ArrayBuffer>, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=86400' } });
   });
@@ -134,13 +172,53 @@ export function apply(ctx: HostContext): void {
   route('/api/dsh-singinglab/settings', ['GET', 'POST'], async (request) => {
     if (request.method === 'POST') {
       const body = await request.json().catch(() => ({})) as Partial<Settings>;
-      if (Array.isArray(body.libraries)) {
-        settings = { ...settings, libraries: body.libraries.filter((d) => typeof d === 'string' && d.trim()) };
-        await mkdir(dataDir, { recursive: true });
-        await writeFile(settingsFile, JSON.stringify(settings, null, 2));
-        library.setDirs(libraryDirs(settings));
-      }
+      settings = normalize({ ...settings, ...body });
+      await mkdir(dataDir, { recursive: true });
+      await writeFile(settingsFile, JSON.stringify(settings, null, 2));
+      library.setDirs(libraryDirs(settings));
     }
-    return json({ ok: true, settings, dataDir });
+    return json({ ok: true, settings, dataDir, missing: learner?.missing() ?? null });
+  });
+
+  // B 站搜索结果的封面：由这边去取（只认 B 站图床），浏览器直连图床时常拿不到
+  route('/api/dsh-singinglab/img', ['GET'], async (request) => {
+    const u = new URL(request.url).searchParams.get('u') ?? '';
+    if (!/^https:\/\/i\d\.hdslb\.com\/bfs\/[\w/.-]+\.(?:jpe?g|png|webp)$/i.test(u)) return json({ ok: false, error: 'bad url' }, 400);
+    const res = await fetch(`${u}@480w_300h_1c.jpg`, { headers: { Referer: 'https://www.bilibili.com/' }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+    if (!res?.ok) return new Response(null, { status: 404 });
+    return new Response(new Uint8Array(await res.arrayBuffer()), { headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=86400' } });
+  });
+
+  route('/api/dsh-singinglab/search', ['POST'], async (request) => {
+    const body = await request.json().catch(() => ({})) as { q?: string };
+    const q = String(body.q ?? '').trim().slice(0, 80);
+    if (!q) return json({ ok: false, error: '要搜什么？' }, 400);
+    const ref = parseVideoRef(q);
+    if (ref) {
+      const info = await bili.info(ref.bvid);
+      if (!info) return json({ ok: false, error: '找不到这个视频' }, 404);
+      const part = info.parts.find((p) => p.page === ref.page) ?? info.parts[0];
+      return json({ ok: true, hits: [{ bvid: info.bvid, page: part?.page ?? 1, title: info.title, up: info.up, durationSec: part?.durationSec ?? info.durationSec, views: 0, cover: info.cover, guess: guessTitle(info.title) }] });
+    }
+    const hits = await bili.search(q);
+    if (!hits) return json({ ok: false, error: 'B 站搜索暂时用不了，过一会儿再试' }, 502);
+    return json({ ok: true, hits: hits.map((h) => ({ ...h, page: 1, guess: guessTitle(h.title, q) })) });
+  });
+
+  route('/api/dsh-singinglab/learn', ['POST'], async (request) => {
+    const body = await request.json().catch(() => ({})) as { bvid?: string; page?: number; title?: string; artist?: string; autoplay?: boolean };
+    const ref = parseVideoRef(String(body.bvid ?? ''));
+    if (!ref || !learner) return json({ ok: false, error: '没有 BV 号' }, 400);
+    const lack = learner.missing();
+    if (lack) return json({ ok: false, error: lack }, 409);
+    const job = learner.learn({ bvid: ref.bvid, page: body.page ?? ref.page, title: String(body.title ?? ''), artist: body.artist, autoplay: body.autoplay !== false });
+    return json({ ok: true, job });
+  });
+
+  route('/api/dsh-singinglab/jobs', ['GET'], async () => json({ ok: true, jobs: learner?.jobs ?? [], missing: learner?.missing() ?? null }));
+
+  route('/api/dsh-singinglab/cancel', ['POST'], async (request) => {
+    const body = await request.json().catch(() => ({})) as { id?: string };
+    return json({ ok: !!learner?.cancel(String(body.id ?? '')) });
   });
 }

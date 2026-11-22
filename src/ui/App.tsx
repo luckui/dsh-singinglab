@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import { getEngine } from './engine';
+import { LearnPill, Toast } from './Learning';
 import { Library } from './Library';
 import { NowPlaying } from './NowPlaying';
 import type { SceneSpec } from './scene';
@@ -28,7 +29,7 @@ export function App() {
   const [view, setView] = useState<'library' | 'now'>(() => (engine.state.current ? 'now' : 'library'));
   const spec = useScene();
 
-  useEffect(() => { void engine.refresh(); }, [engine]);
+  useEffect(() => { void engine.refresh(); engine.startJobs(); }, [engine]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -57,6 +58,10 @@ export function App() {
           <NowPlaying spec={spec} onBack={() => setView('library')} />
         </div>
       </div>
+      <div className="sl-overlay">
+        <LearnPill />
+      </div>
+      <Toast />
     </div>
   );
 }

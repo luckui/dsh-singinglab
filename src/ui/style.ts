@@ -178,6 +178,64 @@ export const CSS = `
 .sl-row-sub { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sl-row-eq { color: var(--sky); flex: none; padding-right: 4px; }
 
+/* 学歌：右上角的药丸、学歌列表、提示条、B 站搜索结果、确认框 */
+.sl-overlay { position: absolute; top: 16px; right: 18px; z-index: 6; display: flex; justify-content: flex-end; pointer-events: none; }
+.sl-overlay > * { pointer-events: auto; }
+.sl-root:has(.sl-view-now) .sl-overlay, .sl-root.sl-view-now:has(.sl-now.is-idle) .sl-overlay { transition: opacity .8s; }
+.sl-root.sl-view-now:has(.sl-now.is-idle) .sl-overlay { opacity: 0; pointer-events: none; }
+.sl-pill-wrap { position: relative; }
+.sl-pill { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 8px; border-radius: 99px; font-size: 13px; font-weight: 600; color: var(--ink);
+  background: rgba(255,255,255,.72); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 10px 26px -14px rgba(26,72,150,.6), inset 0 0 0 1px rgba(255,255,255,.85); max-width: min(460px, 70vw); }
+.sl-pill-quiet { width: 38px; padding: 0; justify-content: center; color: var(--ink-2); }
+.sl-pill-fish { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg, #6cc0ff, #3a72de); flex: none; }
+.sl-pill.is-busy .sl-pill-fish { animation: sl-swim 1.6s ease-in-out infinite; }
+@keyframes sl-swim { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-2px) rotate(6deg); } }
+.sl-pill-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sl-pill-bar { width: 64px; height: 5px; border-radius: 99px; background: rgba(30,52,102,.12); overflow: hidden; flex: none; }
+.sl-pill-bar i, .sl-job-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--sky), var(--sky-2)); transition: width .8s var(--ease); }
+.sl-pill-pct { font-variant-numeric: tabular-nums; color: var(--ink-2); flex: none; }
+.sl-pill-more { font-size: 12px; color: var(--sky); flex: none; }
+.sl-learnlist { position: absolute; right: 0; top: 46px; width: 340px; max-height: 60vh; overflow-y: auto; padding: 10px; border-radius: 22px;
+  background: rgba(255,255,255,.82); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  box-shadow: 0 24px 60px -24px rgba(26,72,150,.6), inset 0 0 0 1px rgba(255,255,255,.9); }
+.sl-learnlist-head { display: flex; align-items: center; justify-content: space-between; font-weight: 800; padding: 2px 4px 6px 6px; }
+.sl-learnlist-empty { padding: 16px; text-align: center; color: var(--ink-2); font-size: 13px; }
+.sl-job { display: flex; align-items: center; gap: 10px; padding: 7px; border-radius: 14px; }
+.sl-job.is-running { background: rgba(61,139,255,.1); }
+.sl-job-cover { width: 52px; height: 33px; border-radius: 8px; object-fit: cover; flex: none; background: rgba(30,52,102,.08); }
+.sl-job-text { flex: 1; min-width: 0; }
+.sl-job-title { font-size: 13.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl-job-sub { font-size: 11.5px; color: var(--ink-2); margin-top: 1px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sl-job.is-failed .sl-job-sub { color: #b4233a; }
+.sl-job-bar { height: 4px; margin-top: 5px; border-radius: 99px; background: rgba(30,52,102,.12); overflow: hidden; }
+.sl-toast { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px 10px 16px; border-radius: 99px; font-size: 14px; font-weight: 600; color: #fff; max-width: min(620px, calc(100% - 32px));
+  background: linear-gradient(145deg, rgba(74,155,255,.95), rgba(47,99,201,.95)); box-shadow: 0 18px 40px -16px rgba(30,80,180,.8);
+  animation: sl-toast-in .5s var(--ease); }
+.sl-toast span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl-toast-btn { flex: none; padding: 5px 12px; border-radius: 99px; background: rgba(255,255,255,.9) !important; color: #2f63c9 !important; font-size: 13px; font-weight: 700; }
+@keyframes sl-toast-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.sl-bili-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 16px; padding: 12px 12px 12px 18px;
+  border-radius: 20px; background: rgba(255,255,255,.6); box-shadow: inset 0 0 0 1px rgba(255,255,255,.8); font-size: 14px; color: var(--ink-2); }
+.sl-bili { margin: 0 0 26px; padding: 16px 18px 20px; border-radius: 24px; background: rgba(255,255,255,.5); box-shadow: inset 0 0 0 1px rgba(255,255,255,.8); }
+.sl-bili-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.sl-bili-warn { font-size: 13px; color: #9a5b00; background: rgba(255,226,170,.6); padding: 8px 12px; border-radius: 12px; margin-bottom: 10px; }
+.sl-hit .sl-card-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; height: 2.7em; }
+.sl-hit-btn { margin-top: 8px; height: 34px; padding: 0 14px; font-size: 13px; }
+.sl-btn[disabled] { opacity: .55; cursor: default; transform: none; }
+.sl-modal { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(20,40,80,.25); backdrop-filter: blur(4px); }
+.sl-modal-card { width: min(420px, calc(100% - 32px)); padding: 18px; border-radius: 26px; background: rgba(255,255,255,.92); box-shadow: 0 30px 80px -30px rgba(20,60,140,.7); }
+.sl-modal-cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px; }
+.sl-modal-title { margin-top: 12px; font-size: 18px; font-weight: 800; }
+.sl-modal-sub { margin-top: 2px; font-size: 12.5px; color: var(--ink-2); }
+.sl-field { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.sl-field span { width: 32px; flex: none; }
+.sl-field input { flex: 1; height: 38px; padding: 0 12px; border-radius: 12px; border: 0; outline: none; font: inherit; font-size: 14px; color: var(--ink);
+  background: rgba(30,52,102,.06); box-shadow: inset 0 0 0 1px rgba(30,52,102,.08); }
+.sl-field input:focus { box-shadow: inset 0 0 0 1.5px var(--sky); }
+.sl-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+
 /* ── 歌库 ── */
 .sl-library { position: absolute; inset: 0; }
 .sl-lib-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: 0 clamp(18px, 3.2cqw, 48px);
