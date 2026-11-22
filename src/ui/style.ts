@@ -326,6 +326,15 @@ export const CSS = `
 .sl-studio-btn { position: relative; height: 36px; padding: 0 14px; font-size: 13px; }
 .sl-badge { position: absolute; top: 4px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #f0a040; }
 
+/* 搜索的两页：她会唱的 / B 站上的 */
+.sl-tabs { display: flex; gap: 6px; margin: 2px 0 16px; }
+.sl-tabs button { height: 36px; padding: 0 16px; border-radius: 99px; font-size: 14px; font-weight: 650; color: var(--ink-2);
+  background: rgba(255,255,255,.5); box-shadow: inset 0 0 0 1px rgba(30,52,102,.08); }
+.sl-tabs button.is-on { background: var(--ink); color: #fff; box-shadow: none; }
+.sl-theme-night .sl-tabs button { background: rgba(30,42,84,.6); }
+.sl-theme-night .sl-tabs button.is-on { background: #e9f1ff; color: #10162a; }
+.sl-tabs em { font-style: normal; opacity: .6; margin-left: 4px; font-weight: 500; }
+
 /* ── 歌库 ── */
 .sl-library { position: absolute; inset: 0; }
 .sl-lib-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: 0 clamp(18px, 3.2cqw, 48px);

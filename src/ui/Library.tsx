@@ -26,10 +26,13 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
 
   const currentId = s.current?.id ?? s.queue[s.index];
   const [bili, setBili] = useState<{ q: string; hits: Hit[] | null; error?: string } | null>(null);
+  const [tab, setTab] = useState<'mine' | 'bili'>('mine');
   const [picking, setPicking] = useState<Hit | null>(null);
   const searchBili = async (text = query) => {
     const t = text.trim();
     if (!t) return;
+    setTab('bili');
+    if (bili?.q === t && bili.hits) return;
     setBili({ q: t, hits: null });
     try {
       setBili({ q: t, hits: await api.search(t) });
@@ -79,7 +82,7 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
           </button>
           <label className="sl-search">
             <Icon name="search" size={18} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void searchBili(); }} placeholder="找歌，回车也去 B 站找" />
+            <input value={query} onChange={(e) => { setQuery(e.target.value); setTab('mine'); }} onKeyDown={(e) => { if (e.key === 'Enter') void searchBili(); }} placeholder="找歌：她会唱的；回车去 B 站找" />
           </label>
           <div className="sl-seg" role="tablist">
             <button className={sort === 'recent' ? 'is-on' : ''} onClick={() => setSort('recent')}>最近学会</button>
@@ -91,18 +94,27 @@ export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroI
       {s.error && !s.songs.length ? <div className="sl-empty">{s.error}</div> : null}
       {!s.error && !s.songs.length ? <div className="sl-empty">歌库还是空的</div> : null}
       {q ? (
-        <div className="sl-bili-bar">
-          <span>{shown.length ? `她会唱的里有 ${shown.length} 首` : `她还不会唱「${query}」`}</span>
-          <button className="sl-btn sl-btn-primary" onClick={() => void searchBili()}><Icon name="search" size={16} /> 去 B 站找「{query.trim()}」让她学</button>
+        <div className="sl-tabs">
+          <button className={tab === 'mine' ? 'is-on' : ''} onClick={() => setTab('mine')}>她会唱的 <em>{shown.length}</em></button>
+          <button className={tab === 'bili' ? 'is-on' : ''} onClick={() => void searchBili()}>B 站上的「{query.trim()}」{bili?.q === query.trim() && bili.hits ? <em>{bili.hits.length}</em> : null}</button>
         </div>
       ) : null}
-      {bili ? <BiliResults result={bili} onClose={() => setBili(null)} onPick={setPicking} /> : null}
 
-      <div className="sl-grid">
-        {shown.map((song) => (
-          <Card key={song.id} song={song} active={song.id === currentId} playing={song.id === currentId && s.playing} onPlay={() => play(song)} />
-        ))}
-      </div>
+      {q && tab === 'bili' && bili ? <BiliResults result={bili} onClose={() => setTab('mine')} onPick={setPicking} /> : (
+        <>
+          {q && !shown.length ? (
+            <div className="sl-bili-bar">
+              <span>她还不会唱「{query.trim()}」</span>
+              <button className="sl-btn sl-btn-primary" onClick={() => void searchBili()}><Icon name="search" size={16} /> 去 B 站找来让她学</button>
+            </div>
+          ) : null}
+          <div className="sl-grid">
+            {shown.map((song) => (
+              <Card key={song.id} song={song} active={song.id === currentId} playing={song.id === currentId && s.playing} onPlay={() => play(song)} />
+            ))}
+          </div>
+        </>
+      )}
       <div className="sl-lib-pad" />
       </div>
       <MiniBar onOpen={onOpenNow} />
