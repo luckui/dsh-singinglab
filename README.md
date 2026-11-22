@@ -10,15 +10,15 @@
 
 > 帮我装一下 dsh-singinglab 唱歌插件，装好后把学歌也准备好。
 
-她会装好插件、重启。之后侧栏有「唱歌」：打开「学歌设置」点「一键准备」；或者新建一个「大肥鱼唱歌」会话，让她自己把学歌环境装好、模型下好。中间唯一要你给的，是**她的声音**：一个 RVC 声音模型（`.pth` 文件，最好带上同名的 `.index`）。告诉她文件在哪，或者在唱歌面板的「学歌设置」里把文件拖进去。
+她会装好插件、重启。之后在任何会话里都能跟她说「我想听晴天」，她去找、去学、放给你听；学歌环境和模型她也会自己装好。侧栏多了「唱歌」：歌库和播放器。中间唯一要你给的，是**她的声音**：一个 RVC 声音模型（`.pth` 文件，最好带上同名的 `.index`）。告诉她文件在哪，或者在唱歌面板的「学歌设置」里把文件拖进去。
 
 ### 给 DSH 的安装步骤（AI 照着做）
 
 1. 用插件管理工具安装 npm 包 `dsh-singinglab` 到当前 profile（命令行等价于 `dsh plugin --profile web add dsh-singinglab`），然后重启 DSH。
-2. 重启后侧栏会出现「唱歌」，新建会话时多了一个 agent 预设「大肥鱼唱歌」。下面这些工具在那个预设里（让用户新开一个「大肥鱼唱歌」会话，或者告诉用户在唱歌面板的「学歌设置」里点「一键准备」，效果一样）。调 `singinglab_status` 看还缺什么。
+2. 重启后侧栏会出现「唱歌」，每个会话都多了 `singinglab_*` 工具（插件不带预设，不用换模式）。调 `singinglab_status` 看还缺什么。
 3. 调 `singinglab_prepare`：它会装学歌环境（插件自己的 Python 3.11 + PyTorch，放在 `<DSH_HOME>/dsh-singinglab/engine`，不碰用户别的 Python），再下载推荐配方要的模型。全程走国内镜像，几分钟到半小时。用 `singinglab_status` 看进度。
 4. 问用户要 RVC 声音模型的路径，用 `singinglab_import_voice` 导入。
-5. 用户说想听什么：`singinglab_search` 找，`singinglab_learn` 学（学会了播放器自动放），已经会唱的用 `singinglab_play` 放。
+5. 用户说想听什么：`singinglab_search` 找，`singinglab_learn` 学（学会了自动放），已经会唱的用 `singinglab_play` 放。不用打开唱歌页面就能放出来；对话里的卡片上有「去唱歌」按钮，点了切到播放器看歌词。
 
 ## 要什么样的电脑
 

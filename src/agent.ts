@@ -1,6 +1,6 @@
 /**
- * AI 工具：挂进 DSH 默认的 agent（cordis.patch.yml 插进 standard 预设）。用户跟 DSH 说「帮我装好唱歌」「我想听晴天」，
- * 她用这些工具把事办完，不用用户自己点：
+ * 唱歌工具：挂在根上（cordis.patch.yml），用户平时的每个会话、任何模式都能用；插件不带预设、不带人设。
+ * 用户在对话里说「我想听晴天」「帮我把学歌装好」，就用这些工具办完：
  *   singinglab_status          学歌准备好了没有、缺什么、歌库有几首、正在学什么
  *   singinglab_prepare         一键准备（装环境、下模型），后台进行
  *   singinglab_import_voice    导入一个 RVC 声音模型（电脑上的 .pth 路径）
@@ -36,7 +36,7 @@ export function apply(ctx: AgentContext): void {
 
   reg(defineTool({
     name: 'singinglab_status',
-    description: '唱歌插件（dsh-singinglab）的状态：学歌准备好了没有、还缺什么（环境、模型、她的声音）、显卡、歌库有几首、正在学哪首。用户想听歌、想学歌，或者问唱歌插件怎么样了，先看这个。',
+    description: '唱歌插件（dsh-singinglab）的状态：学歌准备好了没有、还缺什么（环境、模型、她的声音）、显卡、歌库有几首、正在学哪首。用户想听歌、想学歌，或者问唱歌插件怎么样了，先看这个。缺环境或模型就直接 singinglab_prepare，不用问用户（默认就是最好的）；唯一要用户给的是她的声音（RVC .pth）。',
     parameters: {},
     output: text,
     async execute() {
@@ -137,7 +137,7 @@ export function apply(ctx: AgentContext): void {
 
   reg(defineTool({
     name: 'singinglab_play',
-    description: '在唱歌面板的播放器里放一首她已经会唱的歌（用户要打开着唱歌面板才听得到）。',
+    description: '放一首已经学会的歌：在用户的 DSH 网页里直接放出来（不用打开唱歌页面）。用户想看歌词和画面，对话里的卡片上有「去唱歌」按钮。',
     parameters: { song: { type: 'string', required: true, description: '歌库 id（singinglab_search 给的），或者歌名' } },
     output: text,
     async execute(args: { song?: string }) {

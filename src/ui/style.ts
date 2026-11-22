@@ -418,4 +418,22 @@ export const CSS = `
   .sl-tt-disc, .sl-minidisc-spin, .sl-beam-rays { animation: none; }
   .sl-line { transition-duration: 0s !important; }
 }
+
+/* 对话里唱歌工具的卡片：跟着 DSH 的字色走，只用透明度分层 */
+.sl-toolcard { display: flex; align-items: flex-start; gap: 10px; margin: 4px 0; padding: 10px 12px; border-radius: 12px;
+  background: color-mix(in srgb, currentColor 4%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 10%, transparent);
+  font-size: 13px; line-height: 1.5; max-width: 560px; }
+.sl-toolcard-icon { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  color: #3f7fe0; background: rgba(63,127,224,.12); }
+.sl-toolcard.is-error .sl-toolcard-icon { color: #d0573f; background: rgba(208,87,63,.12); }
+.sl-toolcard-body { flex: 1; min-width: 0; }
+.sl-toolcard-title { font-weight: 600; }
+.sl-toolcard-text { opacity: .7; white-space: pre-wrap; word-break: break-word; }
+.sl-toolcard-more { all: unset; cursor: pointer; font-size: 12px; opacity: .55; }
+.sl-toolcard-more:hover { opacity: .9; }
+.sl-toolcard-go { all: unset; cursor: pointer; flex: none; align-self: center; padding: 5px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 600;
+  color: #fff; background: #3f7fe0; }
+.sl-toolcard-go:hover { background: #336fce; }
+.sl-toolcard-dots::after { content: '…'; animation: sl-dots 1.2s steps(3) infinite; display: inline-block; width: 1em; overflow: hidden; vertical-align: bottom; }
+@keyframes sl-dots { from { width: 0; } to { width: 1em; } }
 `;
