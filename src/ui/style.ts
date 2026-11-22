@@ -63,11 +63,6 @@ export const CSS = `
 .sl-glass { position: absolute; container-type: size; pointer-events: auto;
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 78%, transparent 100%);
           mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 78%, transparent 100%); }
-/* 白天：歌词后面一层很淡的蓝影，白字才浮得出来 */
-.sl-theme-day .sl-glass::before { content: ''; position: absolute; inset: 4% -6% 8% -6%; pointer-events: none;
-  background: radial-gradient(60% 46% at 32% 42%, rgba(30, 80, 160, .2), rgba(30, 80, 160, 0) 72%); }
-.sl-glass-sheen { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
-  background: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.10) 42%, rgba(255,255,255,0) 52%, rgba(255,255,255,0) 64%, rgba(255,255,255,.06) 70%, rgba(255,255,255,0) 76%); }
 
 /* ── 歌词（通用） ── */
 .sl-lyrics { position: absolute; inset: 0; overflow: hidden; }
@@ -88,11 +83,11 @@ export const CSS = `
 /* 玻璃上的歌词：白字，带一点蓝色的光，像映在玻璃上 */
 .sl-lyrics.is-glass { color: #fff; }
 .sl-lyrics.is-glass .sl-line { font-size: clamp(18px, 8.4cqw, 48px); font-weight: 750; letter-spacing: .02em;
-  text-shadow: 0 1px 2px rgba(18, 56, 120, .45), 0 0 10px rgba(120, 190, 255, .75), 0 0 26px rgba(60, 140, 240, .6); }
+  text-shadow: 0 1px 2px rgba(18, 56, 120, .5), 0 0 6px rgba(90, 160, 240, .45); }
 .sl-lyrics.is-glass .sl-line:hover { background: rgba(255,255,255,.08); }
 /* 当前这句：荧光（白芯 + 一圈蓝光），打拍子时由 --glow 再亮一点 */
 .sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 3px rgba(255,255,255,.95)) drop-shadow(0 0 10px rgba(150,210,255,.95)) drop-shadow(0 0 26px rgba(70,150,255,.85)); }
-.sl-theme-night .sl-lyrics.is-glass .sl-line { text-shadow: 0 0 8px rgba(140, 210, 255, .55), 0 0 22px rgba(90, 160, 255, .45); }
+.sl-theme-night .sl-lyrics.is-glass .sl-line { text-shadow: 0 1px 2px rgba(0, 10, 30, .6), 0 0 6px rgba(120, 200, 255, .45); }
 .sl-theme-night .sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 3px rgba(255,255,255,.9)) drop-shadow(0 0 12px rgba(120,220,255,1)) drop-shadow(0 0 34px rgba(60,160,255,.9)); }
 .sl-lyrics.is-glass .sl-line.is-current .sl-word { color: transparent; -webkit-background-clip: text; background-clip: text; text-shadow: none;
   background-image: linear-gradient(90deg, #fff 0, #fff var(--p, 0%), rgba(255,255,255,.5) calc(var(--p, 0%) + 6%), rgba(255,255,255,.5) 100%); }

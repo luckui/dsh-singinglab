@@ -91,7 +91,6 @@ export function SceneView({ spec, song }: Props) {
         {p && spec.turntable ? <Turntable spec={spec} p={p} /> : null}
         {glass ? (
           <div className="sl-glass" style={glass}>
-            <div className="sl-glass-sheen" />
             <Lyrics song={song} variant="glass" />
           </div>
         ) : null}
