@@ -45,6 +45,8 @@ export function apply(ctx: AgentContext): void {
       const songs = await library.list();
       const running = learner.jobs.find((j) => j.state === 'running');
       const queued = learner.jobs.filter((j) => j.state === 'queued');
+      // 最近结束的几首：学会了还是没学成（没学成要说原因，她才能告诉用户、决定重学）
+      const ended = learner.jobs.filter((j) => j.state === 'done' || j.state === 'failed').slice(-3);
       const lines = [
         s.mode === 'manual' ? '学歌：用的是用户自己配的环境（手动模式）。' : s.ready ? '学歌：准备好了，可以学。' : `学歌：还没准备好，缺 ${s.needs.map((n) => `${n.name}${n.bytes ? `（${gb(n.bytes)}）` : ''}`).join('、')}。`,
         s.preparing ? `正在一键准备：${s.env.steps.filter((x) => x.state !== 'pending').map((x) => `${x.name} ${x.state === 'done' ? '✓' : x.state === 'running' ? '进行中' : x.state === 'failed' ? `失败：${x.detail ?? ''}` : ''}`).join('；')}` : '',
@@ -55,6 +57,7 @@ export function apply(ctx: AgentContext): void {
         `歌库：${songs.length} 首`,
         running ? `正在学《${running.title}》：${running.label} ${Math.round(running.progress * 100)}%` : '',
         queued.length ? `排队：${queued.map((j) => `《${j.title}》`).join('、')}` : '',
+        ended.length ? `最近学的：${ended.map((j) => `《${j.title}》${j.state === 'done' ? '学会了' : `没学成（${j.reason ?? '原因不明'}）`}`).join('；')}` : '',
       ];
       return lines.filter(Boolean).join('\n');
     },
