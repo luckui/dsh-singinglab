@@ -16,4 +16,10 @@ export const api = {
   song: (id: string) => get<{ song: SongDetail }>(`song?id=${encodeURIComponent(id)}`).then((r) => r.song),
   audioUrl: (id: string) => `${BASE}/audio?id=${encodeURIComponent(id)}`,
   coverUrl: (id: string) => `${BASE}/cover?id=${encodeURIComponent(id)}`,
+  assetUrl: (name: string) => `${BASE}/asset?name=${encodeURIComponent(name)}`,
+  scene: async () => {
+    const res = await fetch(`${BASE}/asset?name=scene.json`, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json() as Promise<import('./scene').SceneSpec>;
+  },
 };

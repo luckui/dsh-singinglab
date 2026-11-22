@@ -9,7 +9,7 @@ type Sort = 'recent' | 'title';
 
 const collator = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true });
 
-export function Library({ onOpenNow }: { onOpenNow: () => void }) {
+export function Library({ onOpenNow, heroImage }: { onOpenNow: () => void; heroImage: string | null }) {
   const engine = getEngine();
   const s = useSyncExternalStore(engine.subscribe, engine.getState);
   const [query, setQuery] = useState('');
@@ -38,14 +38,29 @@ export function Library({ onOpenNow }: { onOpenNow: () => void }) {
   return (
     <div className="sl-library">
       <div className="sl-lib-scroll">
-      <header className="sl-lib-head">
-        <div className="sl-brand">
-          <span className="sl-brand-mark"><Icon name="fish" size={26} /></span>
-          <div>
-            <div className="sl-brand-name">大肥鱼的唱片架</div>
-            <div className="sl-brand-sub">她学会了 {s.songs.length} 首歌</div>
+      <section className="sl-hero" style={heroImage ? { backgroundImage: `url(${heroImage})` } : undefined}>
+        <div className="sl-hero-text">
+          <div className="sl-hero-kicker"><Icon name="fish" size={16} /> 大肥鱼的唱片架</div>
+          <div className="sl-hero-title">今天想听她唱什么？</div>
+          <div className="sl-hero-sub">她已经学会了 {s.songs.length} 首歌</div>
+          <div className="sl-hero-actions">
+            <button className="sl-btn sl-btn-primary" onClick={() => { if (s.current) { if (!s.playing) engine.toggle(); onOpenNow(); } else if (shown[0]) play(shown[0]); }}>
+              <Icon name="play" size={18} /> {s.current ? '继续播放' : '开始播放'}
+            </button>
+            <button className="sl-btn" onClick={() => {
+              const pick = shown[Math.floor(Math.random() * shown.length)];
+              if (!pick) return;
+              if (!s.shuffle) engine.toggleShuffle();
+              void engine.playSong(pick.id, shown.map((x) => x.id));
+              onOpenNow();
+            }}>
+              <Icon name="shuffle" size={18} /> 随机播放
+            </button>
           </div>
         </div>
+      </section>
+      <header className="sl-lib-head">
+        <div className="sl-lib-title">全部歌曲</div>
         <div className="sl-lib-tools">
           <label className="sl-search">
             <Icon name="search" size={18} />
@@ -77,7 +92,7 @@ export function Library({ onOpenNow }: { onOpenNow: () => void }) {
 function Card({ song, active, playing, onPlay }: { song: SongSummary; active: boolean; playing: boolean; onPlay: () => void }) {
   const [broken, setBroken] = useState(false);
   return (
-    <button className={`sl-card ${active ? 'is-active' : ''}`} onClick={onPlay} title={`${song.title} — ${song.artist}`}>
+    <button className={`sl-card-item ${active ? 'is-active' : ''}`} onClick={onPlay} title={`${song.title} — ${song.artist}`}>
       <div className="sl-card-cover">
         {broken
           ? <div className="sl-card-blank"><Icon name="note" size={30} /></div>

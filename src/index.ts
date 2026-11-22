@@ -15,6 +15,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import { Covers } from './covers';
 import { Library, validId } from './library';
 
@@ -32,6 +33,11 @@ export interface Settings {
 }
 
 const dataDir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-singinglab');
+/** lib/index.js 旁边的 ../assets */
+const assetsDir = fileURLToPath(new URL('../assets/', import.meta.url));
+const ASSET_TYPES: Record<string, string> = {
+  '.json': 'application/json', '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+};
 const settingsFile = join(dataDir, 'settings.json');
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -113,6 +119,16 @@ export function apply(ctx: HostContext): void {
     const bytes = song?.bvid ? await covers.get(song.bvid) : null;
     if (!bytes) return new Response(null, { status: 404, headers: { 'cache-control': 'no-store' } });
     return new Response(bytes as Uint8Array<ArrayBuffer>, { headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=86400' } });
+  });
+
+  // 插件自带的美术（场景插画、scene.json），在包里的 assets 目录
+  route('/api/dsh-singinglab/asset', ['GET'], async (request) => {
+    const name = new URL(request.url).searchParams.get('name');
+    if (!name || !/^[\w.-]{1,80}$/.test(name) || name.startsWith('.')) return json({ ok: false, error: 'bad name' }, 400);
+    const file = join(assetsDir, name);
+    if (!(await stat(file).then((s) => s.isFile(), () => false))) return json({ ok: false, error: '没有这个文件' }, 404);
+    const type = ASSET_TYPES[name.slice(name.lastIndexOf('.')).toLowerCase()] ?? 'application/octet-stream';
+    return new Response(await readFile(file), { headers: { 'content-type': type, 'cache-control': 'private, max-age=600' } });
   });
 
   route('/api/dsh-singinglab/settings', ['GET', 'POST'], async (request) => {

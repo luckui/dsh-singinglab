@@ -43,9 +43,10 @@ function currentIndex(items: Item[], t: number): number {
   return lo - 1;
 }
 
-interface Props { song: SongDetail | null }
+interface Props { song: SongDetail | null; variant?: 'stage' | 'glass' }
 
-export function Lyrics({ song }: Props) {
+export function Lyrics({ song, variant = 'stage' }: Props) {
+  const cls = `sl-lyrics is-${variant}`;
   const items = useMemo(() => buildItems(song?.lyrics ?? []), [song]);
   const box = useRef<HTMLDivElement>(null);
   const rows = useRef<(HTMLDivElement | null)[]>([]);
@@ -72,7 +73,7 @@ export function Lyrics({ song }: Props) {
     ro.observe(el);
 
     const place = (index: number, instant: boolean) => {
-      const anchor = el.clientHeight * 0.34;
+      const anchor = el.clientHeight * (variant === 'glass' ? 0.4 : 0.34);
       const focus = Math.max(0, index);
       const shift = anchor - (tops[focus] ?? 0) - (heights[focus] ?? 0) / 2 + manual;
       rows.current.forEach((row, i) => {
@@ -142,12 +143,12 @@ export function Lyrics({ song }: Props) {
       ro.disconnect();
       el.removeEventListener('wheel', onWheel);
     };
-  }, [items]);
+  }, [items, variant]);
 
-  if (!song) return <div className="sl-lyrics sl-lyrics-empty" />;
+  if (!song) return <div className={`${cls} sl-lyrics-empty`} />;
   if (!items.length) {
     return (
-      <div className="sl-lyrics sl-lyrics-empty">
+      <div className={`${cls} sl-lyrics-empty`}>
         <div className="sl-nolyrics">
           <div className="sl-nolyrics-title">{song.title}</div>
           <div className="sl-nolyrics-sub">这首还没有歌词，安静听她唱吧</div>
@@ -159,7 +160,7 @@ export function Lyrics({ song }: Props) {
   rows.current = [];
   words.current = [];
   return (
-    <div className="sl-lyrics" ref={box}>
+    <div className={cls} ref={box}>
       <div className="sl-lyrics-track">
         {items.map((item, i) => {
           if (item.kind === 'gap') {

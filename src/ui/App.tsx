@@ -1,39 +1,32 @@
-/** 播放器页面：歌库 ⇄ 正在播放。背景颜色跟着当前歌的封面走。 */
+/** 播放器页面：歌库 ⇄ 正在播放。两页共用一张场景插画：播放页是清楚的画，歌库页是磨砂过的同一张画。 */
 
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from './api';
-import { Backdrop } from './Backdrop';
 import { getEngine } from './engine';
 import { Library } from './Library';
 import { NowPlaying } from './NowPlaying';
-import { DEFAULT_PALETTE, extractPalette, type Palette } from './palette';
+import type { SceneSpec } from './scene';
 
-const paletteCache = new Map<string, Palette>();
+let sceneCache: SceneSpec | null = null;
 
-function usePalette(id: string | null): Palette {
-  const [palette, setPalette] = useState<Palette>(() => (id && paletteCache.get(id)) || DEFAULT_PALETTE);
+function useScene(): SceneSpec | null {
+  const [spec, setSpec] = useState<SceneSpec | null>(sceneCache);
   useEffect(() => {
-    if (!id) return;
-    const hit = paletteCache.get(id);
-    if (hit) { setPalette(hit); return; }
+    if (sceneCache) return;
     let alive = true;
-    const img = new Image();
-    img.onload = () => {
-      const p = extractPalette(img);
-      paletteCache.set(id, p);
-      if (alive) setPalette(p);
-    };
-    img.src = api.coverUrl(id);
+    api.scene().then((s) => {
+      sceneCache = s;
+      if (alive) setSpec(s);
+    }).catch(() => {});
     return () => { alive = false; };
-  }, [id]);
-  return palette;
+  }, []);
+  return spec;
 }
 
 export function App() {
   const engine = getEngine();
-  const s = useSyncExternalStore(engine.subscribe, engine.getState);
   const [view, setView] = useState<'library' | 'now'>(() => (engine.state.current ? 'now' : 'library'));
-  const palette = usePalette(s.current?.id ?? s.queue[s.index] ?? null);
+  const spec = useScene();
 
   useEffect(() => { void engine.refresh(); }, [engine]);
 
@@ -51,16 +44,17 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [engine, view]);
 
+  const bg = spec ? api.assetUrl(spec.blurred ?? spec.image) : null;
+
   return (
     <div className={`sl-root sl-view-${view}`}>
-      <Backdrop palette={palette} />
-      <div className="sl-shade" />
+      <div className="sl-libbg" aria-hidden style={bg ? { backgroundImage: `url(${bg})` } : undefined} />
       <div className="sl-views">
         <div className="sl-pane sl-pane-lib" aria-hidden={view !== 'library'}>
-          <Library onOpenNow={() => setView('now')} />
+          <Library onOpenNow={() => setView('now')} heroImage={spec ? api.assetUrl(spec.image) : null} />
         </div>
         <div className="sl-pane sl-pane-now" aria-hidden={view !== 'now'}>
-          <NowPlaying palette={palette} onBack={() => setView('library')} />
+          <NowPlaying spec={spec} onBack={() => setView('library')} />
         </div>
       </div>
     </div>
