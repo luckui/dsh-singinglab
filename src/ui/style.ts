@@ -82,13 +82,15 @@ export const CSS = `
 
 /* 玻璃上的歌词：白字，带一点蓝色的光，像映在玻璃上 */
 .sl-lyrics.is-glass { color: #fff; }
+/* 左右留出光散开的地方，不然荧光会被框边切出一条直线 */
+.sl-lyrics.is-glass .sl-lyrics-track { padding: 0 22px 0 26px; }
 .sl-lyrics.is-glass .sl-line { font-size: clamp(18px, 8.4cqw, 48px); font-weight: 750; letter-spacing: .02em;
   text-shadow: 0 1px 2px rgba(18, 56, 120, .5), 0 0 6px rgba(90, 160, 240, .45); }
 .sl-lyrics.is-glass .sl-line:hover { background: rgba(255,255,255,.08); }
 /* 当前这句：荧光（白芯 + 一圈蓝光），打拍子时由 --glow 再亮一点 */
-.sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 3px rgba(255,255,255,.95)) drop-shadow(0 0 10px rgba(150,210,255,.95)) drop-shadow(0 0 26px rgba(70,150,255,.85)); }
+.sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 1.5px rgba(255,255,255,.95)) drop-shadow(0 0 5px rgba(150,210,255,.95)) drop-shadow(0 0 11px rgba(70,150,255,.7)); }
 .sl-theme-night .sl-lyrics.is-glass .sl-line { text-shadow: 0 1px 2px rgba(0, 10, 30, .6), 0 0 6px rgba(120, 200, 255, .45); }
-.sl-theme-night .sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 3px rgba(255,255,255,.9)) drop-shadow(0 0 12px rgba(120,220,255,1)) drop-shadow(0 0 34px rgba(60,160,255,.9)); }
+.sl-theme-night .sl-lyrics.is-glass .sl-line.is-current { filter: drop-shadow(0 0 1.5px rgba(255,255,255,.95)) drop-shadow(0 0 5px rgba(120,220,255,1)) drop-shadow(0 0 12px rgba(60,160,255,.75)); }
 .sl-lyrics.is-glass .sl-line.is-current .sl-word { color: transparent; -webkit-background-clip: text; background-clip: text; text-shadow: none;
   background-image: linear-gradient(90deg, #fff 0, #fff var(--p, 0%), rgba(255,255,255,.5) calc(var(--p, 0%) + 6%), rgba(255,255,255,.5) 100%); }
 .sl-lyrics.is-glass .sl-gap span { background: #fff; box-shadow: 0 0 10px rgba(46,120,210,.5); }
