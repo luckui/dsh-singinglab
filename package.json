@@ -1,0 +1,36 @@
+{
+  "name": "dsh-singinglab",
+  "version": "0.0.1",
+  "description": "A music player for DeepSeek Harness where 大肥鱼 sings: tell her a song, she learns it on your machine and plays it.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "main": "./lib/index.js",
+  "files": ["lib", "cordis.patch.yml", "README.md"],
+  "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "music-player", "singing", "rvc"],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "18.3.5",
+    "esbuild": "0.28.2",
+    "react": "18.3.1",
+    "typescript": "6.0.3",
+    "vitest": "3.2.4"
+  }
+}
