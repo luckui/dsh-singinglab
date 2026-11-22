@@ -106,6 +106,7 @@ export function apply(ctx: AgentContext): void {
       const ref = parseVideoRef(q);
       const hits = ref ? await bili.info(ref.bvid).then((i) => (i ? [{ bvid: i.bvid, title: i.title, up: i.up, durationSec: i.durationSec, views: 0, cover: i.cover }] : [])) : (await bili.search(q)) ?? [];
       return [
+        `${mine.length ? `她会唱 ${mine.length} 首` : '她还不会唱'}；B 站上${hits.length ? `找到 ${Math.min(hits.length, 8)} 个` : '没找到'}。`,
         mine.length ? `她已经会唱：\n${mine.map((s) => `- 《${s.title}》${s.artist ? ` ${s.artist}` : ''}（歌库 id：${s.id}）`).join('\n')}` : '她还不会唱这首。',
         hits.length ? `B 站上：\n${hits.slice(0, 8).map((h) => `- ${h.bvid}  ${h.title}  · ${h.up} · ${clock(h.durationSec)}${h.views ? ` · ${h.views} 播放` : ''}  （猜的歌名：${guessTitle(h.title, q)}）`).join('\n')}` : 'B 站上没搜到（或者搜索暂时用不了）。',
       ].join('\n\n');
