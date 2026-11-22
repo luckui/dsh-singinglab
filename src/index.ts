@@ -34,7 +34,7 @@ import { Learner } from './learner';
 import type { RecipeChoice } from './recipe';
 import { loadCatalog } from './shelf';
 import { Studio } from './studio';
-import { runtime } from './runtime';
+import { runtime, setStarted } from './runtime';
 import { Library, validId } from './library';
 
 export const name = 'dsh-singinglab';
@@ -152,6 +152,7 @@ export function apply(ctx: HostContext): void {
       onChange: () => {},
     });
     Object.assign(runtime, { studio, learner, library, bili });
+    setStarted();
   })();
   runtime.ready = ready;
   ctx.effect(() => () => learner?.close(), 'dsh-singinglab learner');

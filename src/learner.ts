@@ -33,6 +33,8 @@ export interface Job {
   reason?: string;
   /** 学会了就直接放 */
   autoplay: boolean;
+  /** 哪个 DSH 会话让学的：学完（或没学成）告诉那个会话里的她 */
+  session?: string;
   queuedAt: number;
   startedAt?: number;
   endedAt?: number;
@@ -44,6 +46,7 @@ export interface LearnRequest {
   title: string;
   artist?: string;
   autoplay?: boolean;
+  session?: string;
 }
 
 export interface LearnerOptions {
@@ -116,6 +119,8 @@ function run(command: string, args: string[]): Promise<void> {
 
 export class Learner {
   jobs: Job[] = [];
+  /** 一首学完或没学成时通知（AI 工具用它告诉让学的那个会话） */
+  readonly ended = new Set<(job: Job) => void>();
   private stopRunning: (() => void) | null = null;
   private busy = false;
 
@@ -146,12 +151,13 @@ export class Learner {
     const active = this.jobs.find((j) => j.id === id && (j.state === 'queued' || j.state === 'running'));
     if (active) {
       if (req.autoplay) active.autoplay = true;
+      if (req.session) active.session = req.session;
       return active;
     }
     this.jobs = this.jobs.filter((j) => j.id !== id);
     const job: Job = {
       id, bvid: req.bvid, page, title: req.title.trim().slice(0, 60) || req.bvid, artist: (req.artist ?? '').trim().slice(0, 40), who: '', cover: '',
-      state: 'queued', label: '排队中', progress: 0, autoplay: req.autoplay ?? true, queuedAt: Date.now(),
+      state: 'queued', label: '排队中', progress: 0, autoplay: req.autoplay ?? true, ...(req.session ? { session: req.session } : {}), queuedAt: Date.now(),
     };
     this.jobs.push(job);
     const finished = this.jobs.filter((j) => j.state === 'done' || j.state === 'failed');
@@ -201,6 +207,9 @@ export class Learner {
     } finally {
       this.busy = false;
       this.stopRunning = null;
+      for (const listener of this.ended) {
+        try { listener(job); } catch { /* 通知失败不影响学下一首 */ }
+      }
       void this.next();
     }
   }

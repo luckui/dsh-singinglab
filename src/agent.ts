@@ -5,20 +5,26 @@
  *   singinglab_prepare         一键准备（装环境、下模型），后台进行
  *   singinglab_import_voice    导入一个 RVC 声音模型（电脑上的 .pth 路径）
  *   singinglab_search          在歌库和 B 站上找歌
- *   singinglab_learn           学一首（B 站视频），学会了播放器会自动放
+ *   singinglab_learn           学一首（B 站视频），在后台学；学会了播放器会自动放，
+ *                              学完（或没学成）往让学的那个会话里补一条消息叫醒她（像后台任务的完成通知）
  *   singinglab_play            在播放器里放歌库里的一首
  */
 
+import { randomUUID } from 'node:crypto';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { guessTitle, parseVideoRef } from './bili';
-import { pushCommand, runtime } from './runtime';
+import type { Job } from './learner';
+import { pushCommand, runtime, started } from './runtime';
 
 export const name = 'dsh-singinglab-agent';
 export const inject = ['tools'];
 
+interface LiveAgent { followup(message: unknown): void | Promise<void> }
+
 interface AgentContext {
   effect(effect: () => () => void, label?: string): unknown;
   tools: { register(tool: unknown): () => void };
+  get?(name: 'agents'): { get?(id: string): LiveAgent | undefined } | undefined;
 }
 
 const text = { schema: { type: 'string' as const }, render: (_a: unknown, value: string) => [{ type: 'text' as const, text: value }] };
@@ -31,8 +37,38 @@ async function rt() {
   return { studio: runtime.studio, learner: runtime.learner, library: runtime.library, bili: runtime.bili };
 }
 
+/** 学完一首：往让学的那个会话里补一条消息并叫醒她。会话不在了（关了、DSH 重启过）就不说，她下次查状态能看到 */
+function tellSession(ctx: AgentContext, job: Job): void {
+  if (!job.session || job.reason === '取消了') return;
+  const agents = ctx.get?.('agents');
+  const agent = agents?.get?.(job.session);
+  if (!agent?.followup) {
+    console.warn(`[dsh-singinglab] 学完没能告诉会话 ${job.session}：${agents ? '会话不在线' : '拿不到 agents 服务'}`);
+    return;
+  }
+  const took = job.startedAt && job.endedAt ? `（用时 ${clock((job.endedAt - job.startedAt) / 1000)}）` : '';
+  const text = job.state === 'done'
+    ? `[唱歌插件] 《${job.title}》学会了${took}，播放器会自动放（正在放别的就排在下一首）。`
+    : `[唱歌插件] 《${job.title}》没学成：${job.reason ?? '原因不明'}`;
+  // 和 DSH 自己的用户消息一样：带 id 和 role，冻结
+  void agent.followup(Object.freeze({ id: randomUUID(), role: 'user', content: [{ type: 'text', text }], source: { kind: 'dsh-singinglab' } }));
+}
+
 export function apply(ctx: AgentContext): void {
   const reg = (tool: unknown, label: string) => ctx.effect(() => ctx.tools.register(tool), label);
+
+  ctx.effect(() => {
+    let off = (): void => {};
+    let disposed = false;
+    void started.then(() => {
+      const learner = runtime.learner;
+      if (disposed || !learner) return;
+      const listener = (job: Job) => tellSession(ctx, job);
+      learner.ended.add(listener);
+      off = () => { learner.ended.delete(listener); };
+    }).catch(() => { /* 插件没起来就不通知 */ });
+    return () => { disposed = true; off(); };
+  }, 'singinglab: tell the session when a song is learned');
 
   reg(defineTool({
     name: 'singinglab_status',
@@ -118,7 +154,7 @@ export function apply(ctx: AgentContext): void {
 
   reg(defineTool({
     name: 'singinglab_learn',
-    description: '让她学一首歌（B 站视频）：在用户电脑上分离人声、换成她的声音，一首大约 3 分钟（看显卡）。在后台学，学会了播放器会自动放（正在放别的就排到下一首），不用等它学完：告诉用户大概几分钟后会放，这一轮就可以结束。用户之后问起，再用 singinglab_status 看。歌名要准（对歌词要用）。',
+    description: '让她学一首歌（B 站视频）：在用户电脑上分离人声、换成她的声音，一首大约 3 分钟（看显卡）。在后台学，学会了播放器会自动放（正在放别的就排到下一首），不用等它学完：告诉用户大概几分钟后会放，这一轮就可以结束。学完（或没学成）会在这个会话里收到一条「[唱歌插件]」消息。歌名要准（对歌词要用）。',
     parameters: {
       bvid: { type: 'string', required: true, description: 'BV 号或视频链接' },
       title: { type: 'string', required: true, description: '歌名（干净的歌名，不要「MV」「高音质」这些）' },
@@ -126,16 +162,16 @@ export function apply(ctx: AgentContext): void {
       page: { type: 'number', description: '分 P（默认第 1 个）' },
     },
     output: text,
-    async execute(args: { bvid?: string; title?: string; artist?: string; page?: number }) {
+    async execute(args: { bvid?: string; title?: string; artist?: string; page?: number }, exec?: { agent?: { id: string } }) {
       const { studio, learner } = await rt();
       const ref = parseVideoRef(String(args.bvid ?? ''));
       if (!ref) return '没认出 BV 号。';
       const lack = await studio.check();
       if (lack) return `${lack}\n可以先调 singinglab_prepare。`;
-      const job = learner.learn({ bvid: ref.bvid, page: args.page ?? ref.page, title: String(args.title ?? ''), artist: args.artist, autoplay: true });
+      const job = learner.learn({ bvid: ref.bvid, page: args.page ?? ref.page, title: String(args.title ?? ''), artist: args.artist, autoplay: true, ...(exec?.agent?.id ? { session: exec.agent.id } : {}) });
       return job.state === 'queued' && learner.jobs.some((j) => j.state === 'running' && j.id !== job.id)
-        ? `排上了《${job.title}》，前面还有歌在学。在后台学，学会了会自动放，不用等。`
-        : `开始学《${job.title}》，在后台学，大约 3 分钟，学会了会自动放，不用等。`;
+        ? `排上了《${job.title}》，前面还有歌在学。在后台学，学会了会自动放，学完会告诉你，不用等。`
+        : `开始学《${job.title}》，在后台学，大约 3 分钟，学会了会自动放，学完会告诉你，不用等。`;
     },
   }), 'singinglab_learn');
 

@@ -20,6 +20,11 @@ export const runtime: {
   commands: PlayerCommand[];
 } = { ready: null, studio: null, learner: null, library: null, bili: null, commands: [] };
 
+/** 本体把 learner 这些放进 runtime 之后才 resolve（AI 工具插件可能比本体先启动） */
+let markStarted: () => void = () => {};
+export const started = new Promise<void>((resolve) => { markStarted = resolve; });
+export function setStarted(): void { markStarted(); }
+
 let nextCommand = 1;
 export function pushCommand(cmd: Omit<PlayerCommand, 'id'>): void {
   runtime.commands.push({ ...cmd, id: nextCommand++ });
