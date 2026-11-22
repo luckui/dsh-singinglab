@@ -1,0 +1,96 @@
+{
+  "about": "模型货架：学歌每个环节能用的做法，和它们要的模型文件。sha256 是 2026-11 实测能学歌的那份。sources 按顺序试，{mirror} 是我们自己在 ModelScope 上的镜像（国内能下）；Hugging Face 国内连不上，只当备用。",
+  "mirror": "",
+  "models": [
+    {
+      "id": "sep-polarformer", "step": "separate", "name": "BS-RoFormer PolarFormer", "license": "MIT（MSST 官方发布）",
+      "note": "把人声和伴奏分开。干净、稳，推荐。",
+      "msst": { "type": "bs_roformer", "config": "model_bs_polarformer_float16.yaml", "checkpoint": "model_bs_polarformer_float16.ckpt", "stem": "vocals" },
+      "files": [
+        { "name": "model_bs_polarformer_float16.ckpt", "size": 102410301, "sha256": "fc8b72c3beb92caad4e14f180979c02ddf18a330182176cf6c7bb0eb6c685e87",
+          "sources": ["{mirror}/sep-polarformer/model_bs_polarformer_float16.ckpt", "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.20/model_bs_polarformer_float16.ckpt"] },
+        { "name": "model_bs_polarformer_float16.yaml", "size": 3599, "sha256": "0348205cb562a58e9724870a4cf43e5d2c49ae87258159b2827c4e42ed51b00d",
+          "sources": ["{mirror}/sep-polarformer/model_bs_polarformer_float16.yaml", "https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/download/v1.0.20/model_bs_polarformer_float16.yaml"] }
+      ]
+    },
+    {
+      "id": "kara-becruily", "step": "karaoke", "name": "Mel-RoFormer 拆主唱（becruily）", "license": "见作者页（becruily/mel-band-roformer-karaoke）",
+      "note": "把主唱和和声分开，拆得最干净；偶尔会把主唱当成和声。",
+      "msst": { "type": "mel_band_roformer", "config": "config_karaoke_becruily.yaml", "checkpoint": "mel_band_roformer_karaoke_becruily.ckpt" },
+      "files": [
+        { "name": "mel_band_roformer_karaoke_becruily.ckpt", "size": 1719139254, "sha256": "d3aa262ac01df870b9fc033e9c7b6cad33fe04fc9c148b6c40841326a515a0e0",
+          "sources": ["{mirror}/kara-becruily/mel_band_roformer_karaoke_becruily.ckpt", "https://huggingface.co/becruily/mel-band-roformer-karaoke/resolve/main/mel_band_roformer_karaoke_becruily.ckpt"] },
+        { "name": "config_karaoke_becruily.yaml", "size": 1724, "sha256": "cd37b0dcc285fc22d88090415722ac7127ee1d9ea2f3346c3b8d8fcc61e0c74b",
+          "sources": ["{mirror}/kara-becruily/config_karaoke_becruily.yaml", "https://huggingface.co/becruily/mel-band-roformer-karaoke/resolve/main/config_karaoke_becruily.yaml"] }
+      ]
+    },
+    {
+      "id": "kara-anvuew", "step": "karaoke", "name": "BS-RoFormer 拆主唱（anvuew，小）", "license": "见作者页（anvuew/karaoke_bs_roformer）",
+      "note": "小很多（0.2 GB），少丢主唱，偶尔留一点和声。",
+      "msst": { "type": "bs_roformer", "config": "karaoke_bs_roformer_anvuew.yaml", "checkpoint": "karaoke_bs_roformer_anvuew.ckpt" },
+      "files": [
+        { "name": "karaoke_bs_roformer_anvuew.ckpt", "size": 204486925, "sha256": "206d04757cb5f75ca3b55f8a0a48f5c26aa2351d4ff3c7adbfc9affa30ea3ae4",
+          "sources": ["{mirror}/kara-anvuew/karaoke_bs_roformer_anvuew.ckpt", "https://huggingface.co/anvuew/karaoke_bs_roformer/resolve/main/karaoke_bs_roformer_anvuew.ckpt"] },
+        { "name": "karaoke_bs_roformer_anvuew.yaml", "size": 1973, "sha256": "5cb3f127ecbc6a8e37f31ea7e05f60f360a44da43e857bde805b7b68558f6338",
+          "sources": ["{mirror}/kara-anvuew/karaoke_bs_roformer_anvuew.yaml", "https://huggingface.co/anvuew/karaoke_bs_roformer/resolve/main/karaoke_bs_roformer_anvuew.yaml"] }
+      ]
+    },
+    {
+      "id": "derev-anvuew", "step": "dereverb", "name": "Mel-RoFormer 去混响（anvuew）", "license": "见作者页（anvuew/dereverb_mel_band_roformer）",
+      "note": "擦掉人声里的混响，转出来的声音更干净。",
+      "msst": { "type": "mel_band_roformer", "config": "dereverb_mel_band_roformer_anvuew.yaml", "checkpoint": "dereverb.ckpt" },
+      "files": [
+        { "name": "dereverb.ckpt", "size": 913107578, "sha256": "9262877b87e9ebb0fb808a456b0a411fa677f5df31c8383c1254af531c078970",
+          "sources": ["{mirror}/derev-anvuew/dereverb.ckpt"] },
+        { "name": "dereverb_mel_band_roformer_anvuew.yaml", "size": 1846, "sha256": "efcff19522db5bbd9c9bab78ea336cc4adeb766743f7b80ef1f6baf4232f24ee",
+          "sources": ["{mirror}/derev-anvuew/dereverb_mel_band_roformer_anvuew.yaml"] }
+      ]
+    },
+    {
+      "id": "rvc-base", "step": "convert", "name": "RVC 基础模型（RMVPE 音高 + ContentVec）", "license": "MIT（RVC / Applio）",
+      "note": "换声音必需的两个基础模型。",
+      "place": { "rmvpe.pt": "applio/rvc/models/predictors/rmvpe.pt", "config.json": "applio/rvc/models/embedders/contentvec/config.json", "pytorch_model.bin": "applio/rvc/models/embedders/contentvec/pytorch_model.bin" },
+      "files": [
+        { "name": "rmvpe.pt", "size": 181184272, "sha256": "6d62215f4306e3ca278246188607209f09af3dc77ed4232efdd069798c4ec193",
+          "sources": ["{mirror}/rvc-base/rmvpe.pt", "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/predictors/rmvpe.pt"] },
+        { "name": "config.json", "size": 1388, "sha256": "2ddde063b795d38d9051a7215a092fecf4cfe148b54251e38de51d88d356898b",
+          "sources": ["{mirror}/rvc-base/config.json", "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/embedders/contentvec/config.json"] },
+        { "name": "pytorch_model.bin", "size": 378342945, "sha256": "d8dd400e054ddf4e6be75dab5a2549db748cc99e756a097c496c099f65a4854e",
+          "sources": ["{mirror}/rvc-base/pytorch_model.bin", "https://huggingface.co/IAHispano/Applio/resolve/main/Resources/embedders/contentvec/pytorch_model.bin"] }
+      ]
+    },
+    {
+      "id": "whisper-large-v3", "step": "lyrics", "name": "Whisper large-v3（听歌词）", "license": "MIT（OpenAI Whisper，faster-whisper 转换）",
+      "note": "听她唱的是什么词，用来挑对的歌词版本、对时间。",
+      "files": [
+        { "name": "model.bin", "size": 3087284237, "sha256": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1",
+          "sources": ["https://www.modelscope.cn/models/Systran/faster-whisper-large-v3/resolve/master/model.bin", "{mirror}/whisper-large-v3/model.bin"] },
+        { "name": "config.json", "size": 2394, "sha256": "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9",
+          "sources": ["https://www.modelscope.cn/models/Systran/faster-whisper-large-v3/resolve/master/config.json"] },
+        { "name": "preprocessor_config.json", "size": 340, "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+          "sources": ["https://www.modelscope.cn/models/Systran/faster-whisper-large-v3/resolve/master/preprocessor_config.json"] },
+        { "name": "tokenizer.json", "size": 2480617, "sha256": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca",
+          "sources": ["https://www.modelscope.cn/models/Systran/faster-whisper-large-v3/resolve/master/tokenizer.json"] },
+        { "name": "vocabulary.json", "size": 1068114, "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+          "sources": ["https://www.modelscope.cn/models/Systran/faster-whisper-large-v3/resolve/master/vocabulary.json"] }
+      ]
+    }
+  ],
+  "steps": [
+    { "id": "download", "name": "取音频", "fixed": true },
+    { "id": "separate", "name": "分离人声", "required": true },
+    { "id": "karaoke", "name": "拆主唱", "optional": true, "why": "歌里有和声时，只留主唱，她才不会被和声带跑调。" },
+    { "id": "dereverb", "name": "去混响", "optional": true, "why": "擦掉原唱的混响，她的声音更干净。" },
+    { "id": "lyrics", "name": "对歌词", "optional": true, "why": "找到对的歌词并对上时间，播放时逐字亮。" },
+    { "id": "pitch", "name": "修音高", "optional": true, "patch": true, "why": "分离不干净时，把唱错八度的地方拉回来。原唱本来就忽高忽低的歌可以关掉。" },
+    { "id": "key", "name": "定调", "patch": true, "modes": ["auto", "none", "fixed"], "why": "自动挑她唱着最舒服的调；也可以不移调，或者自己定升降几个半音。" },
+    { "id": "convert", "name": "换成她的声音", "required": true },
+    { "id": "mix", "name": "混音", "fixed": true }
+  ],
+  "recipes": [
+    { "id": "recommended", "name": "推荐", "note": "现在直播里学歌用的这一套，质量最好。",
+      "use": { "separate": "sep-polarformer", "karaoke": "kara-becruily", "dereverb": "derev-anvuew", "lyrics": "whisper-large-v3", "pitch": true, "key": "auto" } },
+    { "id": "fast", "name": "快速", "note": "只分离人声再换声音，下载最少（不到 1 GB）、学得最快，有和声的歌容易跑调。",
+      "use": { "separate": "sep-polarformer", "karaoke": null, "dereverb": null, "lyrics": null, "pitch": false, "key": "auto" } }
+  ]
+}

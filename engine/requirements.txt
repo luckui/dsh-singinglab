@@ -1,0 +1,32 @@
+# dsh-singinglab 学歌环境：只装推理要用的包（版本和 2026-11 实测能学歌的环境一致）。
+# torch / torchaudio 单独从 CUDA 的源装（见 setup：Windows 用 cu128 的轮子，Linux 用 PyPI 上自带 CUDA 的）。
+numpy==2.4.6
+scipy==1.17.1
+librosa==0.11.0
+soundfile==0.14.0
+soxr==1.1.0
+numba==0.68.0
+resampy==0.4.3
+faiss-cpu==1.14.3
+transformers==5.13.1
+torchcrepe==0.0.24
+einops==0.8.2
+einx==0.4.3
+beartype==0.23.1
+rotary-embedding-torch==0.9.1
+PoPE-pytorch==0.2.1
+torch-einops-utils==0.2.0
+ml_collections==1.1.0
+omegaconf==2.4.0
+matplotlib==3.11.0
+PyYAML==6.0.3
+tqdm==4.68.4
+requests==2.34.2
+psutil==7.2.2
+nvidia-ml-py==13.615.71
+onnxruntime==1.22.1
+click==8.1.8
+faster-whisper==1.2.1
+av==18.1.0
+imageio-ffmpeg==0.6.0
+pedalboard==0.9.26

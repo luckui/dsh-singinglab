@@ -53,8 +53,24 @@ export interface LearnerOptions {
   stateFile: string;
   /** assets/sing/prepare.py */
   script: string;
-  settings(): { python: string; config: string; remote: string; maxSec: number };
+  maxSec(): number;
+  /** 学歌还缺什么（环境没装、模型没下、没有声音……）；null = 能学 */
+  check(): Promise<string | null>;
+  /** 学这一首用什么跑：配方模式现生成配置写进 out；手动模式用设置里填的 Python 和 sing.json */
+  plan(out: string): Promise<Plan>;
   onChange(): void;
+}
+
+export interface Plan {
+  python: string;
+  config: string;
+  /** null = 自动定调 */
+  key: number | null;
+  /** 在另一台机器上学：user@host:port；空 = 本机 */
+  remote: string;
+  env: NodeJS.ProcessEnv;
+  /** 用的哪个配方（记进学歌记录） */
+  recipe: string;
 }
 
 /** 每一步的名字和占的进度（按实测耗时：分离 15、拆主唱 30、去混响 13、歌词 36、修音高 30、转声音 13、分析 2、混音 6 秒） */
@@ -113,15 +129,6 @@ export class Learner {
     void this.next();
   }
 
-  /** 配齐了没有；没齐返回缺什么 */
-  missing(): string | null {
-    const s = this.options.settings();
-    if (!s.python) return '还没设置学歌用的 Python';
-    if (!s.config) return '还没设置 sing.json（学歌用的模型路径）';
-    if (!s.remote && !existsSync(s.python)) return `找不到 Python：${s.python}`;
-    if (!s.remote && !existsSync(s.config)) return `找不到 sing.json：${s.config}`;
-    return null;
-  }
 
   private save(): void {
     try { writeFileSync(this.options.stateFile, JSON.stringify(this.jobs, null, 1)); } catch { /* 存不了不影响学 */ }
@@ -199,7 +206,7 @@ export class Learner {
   }
 
   private async work(job: Job): Promise<void> {
-    const lack = this.missing();
+    const lack = await this.options.check();
     if (lack) throw new Error(lack);
     const out = join(this.options.songsDir, job.id);
     if (existsSync(join(out, 'song.json')) && existsSync(join(out, 'mix.mp3'))) return; // 已经学会了
@@ -208,8 +215,8 @@ export class Learner {
     const part = info.parts.find((p) => p.page === job.page) ?? info.parts[0];
     if (!part) throw new Error('这个视频没有可以播放的分 P');
     this.patch(job, { who: info.up, cover: info.cover });
-    const s = this.options.settings();
-    if (part.durationSec > s.maxSec) throw new Error(`这首有 ${Math.round(part.durationSec / 60)} 分钟，太长了（最长 ${Math.round(s.maxSec / 60)} 分钟）`);
+    const maxSec = this.options.maxSec();
+    if (part.durationSec > maxSec) throw new Error(`这首有 ${Math.round(part.durationSec / 60)} 分钟，太长了（最长 ${Math.round(maxSec / 60)} 分钟）`);
 
     mkdirSync(out, { recursive: true });
     const audio = join(out, 'source.m4a');
@@ -223,17 +230,19 @@ export class Learner {
     }
     this.patch(job, { progress: 3 / TOTAL, label: STEPS[1].label });
     const meta = { title: job.title, artist: job.artist, source: `https://www.bilibili.com/video/${job.bvid}?p=${part.page}`, who: info.up };
-    if (s.remote) await this.prepareRemote(job, out, audio, meta, s);
+    const plan = await this.options.plan(out);
+    if (plan.remote) await this.prepareRemote(job, out, audio, meta, plan, maxSec);
     else {
-      await this.runPrepare(job, s.python, [this.options.script, '--config', s.config, '--audio', audio, '--out', out,
-        '--title', meta.title, '--artist', meta.artist, '--source', meta.source, '--who', meta.who, '--max-sec', String(s.maxSec)]);
+      await this.runPrepare(job, plan.python, [this.options.script, '--config', plan.config, '--audio', audio, '--out', out,
+        '--title', meta.title, '--artist', meta.artist, '--source', meta.source, '--who', meta.who, '--max-sec', String(maxSec),
+        ...(plan.key !== null ? ['--key', String(plan.key)] : [])], plan.env);
     }
     rmSync(audio, { force: true });
     if (!existsSync(join(out, 'song.json')) || !existsSync(join(out, 'mix.mp3'))) throw new Error('学完了却没有生成歌曲文件');
   }
 
   /** 传音频过去，在那台机器上跑 prepare.py（那台机器的 sing.json 旁边要有同一套 prepare.py），把歌曲包取回来 */
-  private async prepareRemote(job: Job, out: string, audio: string, meta: object, s: { python: string; config: string; remote: string; maxSec: number }): Promise<void> {
+  private async prepareRemote(job: Job, out: string, audio: string, meta: object, s: Plan, maxSec: number): Promise<void> {
     const at = s.remote.lastIndexOf(':');
     const host = at > 0 ? s.remote.slice(0, at) : s.remote, port = at > 0 ? s.remote.slice(at + 1) : '22';
     const ssh = ['-p', port, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', host];
@@ -244,18 +253,15 @@ export class Learner {
     await run('ssh', [...ssh, `mkdir -p ${root}`]);
     await run('scp', [...scp, audio, join(out, 'meta.json'), `${host}:${root}/`]);
     await this.runPrepare(job, 'ssh', [...ssh,
-      `${s.python} ${dir}/prepare.py --config ${s.config} --audio ${root}/source.m4a --out ${root}/out --meta ${root}/meta.json --max-sec ${s.maxSec}`]);
+      `${s.python} ${dir}/prepare.py --config ${s.config} --audio ${root}/source.m4a --out ${root}/out --meta ${root}/meta.json --max-sec ${maxSec}${s.key !== null ? ` --key ${s.key}` : ''}`], s.env);
     await run('scp', [...scp, `${host}:${root}/out/song.json`, `${host}:${root}/out/mix.mp3`, out]);
     rmSync(join(out, 'meta.json'), { force: true });
     await run('ssh', [...ssh, `rm -rf ${root}`]).catch(() => {});
   }
 
-  private runPrepare(job: Job, command: string, args: string[]): Promise<void> {
+  private runPrepare(job: Job, command: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, {
-        stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-        env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' },
-      });
+      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env });
       // 低优先级：别抢前台（播放、DSH 本身）
       try { if (child.pid) setPriority(child.pid, constants.priority.PRIORITY_BELOW_NORMAL); } catch { /* 改不了就算了 */ }
       const timer = setTimeout(() => child.kill(), LEARN_TIMEOUT_MS);
