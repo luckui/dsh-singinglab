@@ -246,6 +246,7 @@ export function Editor({ id, onClose }: Props) {
   const roll = useRef<RollApi | null>(null);
 
   useEffect(() => {
+    window.getSelection()?.removeAllRanges(); // 打开时页面上要是选着字，先清掉
     let alive = true;
     api.edit(id).then((d) => {
       if (!alive) return;
@@ -450,7 +451,7 @@ export function Editor({ id, onClose }: Props) {
       : '拖音符改音高 · 拖空白处框一段 · 空格试听 · ? 看快捷键';
 
   return (
-    <div className="sl-editor" role="dialog" aria-label="修音">
+    <div className="sl-editor" role="dialog" aria-label="修音" onDragStart={(e) => e.preventDefault()}>
       <header className="sl-ed-top">
         <button className="sl-ed-back" onClick={close} title="回去"><Icon name="down" size={18} /></button>
         <div className="sl-ed-title"><b>修音</b><span>{title}</span>{dirty ? <i title="有改动还没保存" /> : null}</div>
@@ -862,6 +863,8 @@ function Roll(props: RollProps) {
   };
 
   const onDown = (e: React.PointerEvent) => {
+    // 不让浏览器开始选字、拖东西：不然拖着拖着就把页面上的字当成要拖走的文字（Edge 会拿去开搜索）
+    e.preventDefault();
     const { px, py } = pos(e);
     try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* 拿不到也能拖，只是拖出画布就停 */ }
     if (e.button === 1) { e.preventDefault(); drag.current = { kind: 'pan', x0: px, y0: py, t0: v.t0, top: v.top }; return; }
@@ -1051,7 +1054,7 @@ function Overview({ notes, dur, view, span, head, sel, keyShift, onJump }: {
   return (
     <div className="sl-ed-overview" title="整首：点 / 拖 跳过去">
       <canvas ref={canvas} style={{ width: w, height: H }}
-        onPointerDown={(e) => { try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* 无所谓 */ } jump(e); }}
+        onPointerDown={(e) => { e.preventDefault(); try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* 无所谓 */ } jump(e); }}
         onPointerMove={(e) => { if (e.buttons & 1) jump(e); }} />
     </div>
   );

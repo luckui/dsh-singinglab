@@ -437,7 +437,8 @@ export const CSS = `
 .sl-toolcard-dots::after { content: '…'; animation: sl-dots 1.2s steps(3) infinite; display: inline-block; width: 1em; overflow: hidden; vertical-align: bottom; }
 @keyframes sl-dots { from { width: 0; } to { width: 1em; } }
 /* ── 修音页：深色的工作台，不跟白天 / 雨夜主题走 ── */
-.sl-editor { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #0a0f1d; color: #e6edf9; user-select: none; }
+.sl-editor { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #0a0f1d; color: #e6edf9; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }
+.sl-editor canvas { -webkit-user-drag: none; }
 .sl-ed-top { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
 .sl-ed-back { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #cfd9ec; background: rgba(255,255,255,.06); }
 .sl-ed-back svg { transform: rotate(90deg); }
