@@ -9,7 +9,7 @@
 命令（dir 都是一首歌的 edit 目录，cfg 是学这首歌时的配置 recipe.json / sing.json 的路径）：
     info    {dir}                          帧数、时长；没有测到的音高（raw.npy）就现测一份
     warm    {dir, cfg, key}                打开修音页时在后台先加载声音模型、移好伴奏：第一句试听不用等
-    spec    {dir, layer}                   频谱图 PNG：vocals 原人声（含和声）/ dry 主唱干声 / back 和声。纵轴按半音（MIDI 36–96，每半音 3 格）
+    spec    {dir, layer}                   频谱图 PNG：orig 原曲 / inst 伴奏 / vocals 人声（含和声）/ lead 主唱 / back 和声 / dry 干声。纵轴按半音（MIDI 36–96，每半音 3 格）
     accomp  {dir, key}                     伴奏 + 和声，移到这个调（只移不到八度那部分，和学歌时一样），mp3
     phrase  {dir, cfg, start, end, f0, key}   只渲染这一句（前后各多 0.6 秒）她的声音 + 伴奏，wav
     save    {dir, cfg, f0, key}            整首重新转她的声音、重新混音，换掉 mix.mp3，song.json 记下新的调
@@ -131,7 +131,8 @@ def info(d: Path, cfg_path: str | None = None) -> dict:
     return {"frames": int(len(np.load(raw))), "durationSec": round(len(y) / SR16, 3)}
 
 
-LAYERS = {"vocals": "vocals.mp3", "dry": "dry.flac", "back": "back.mp3"}
+# 学歌每一步的分轨：原曲 → 伴奏 / 人声（含和声）→ 主唱 / 和声 → 干声（去混响）
+LAYERS = {"orig": "orig.mp3", "inst": "inst.mp3", "vocals": "vocals.mp3", "lead": "lead.mp3", "back": "back.mp3", "dry": "dry.flac"}
 
 
 def spec(d: Path, layer: str) -> dict:

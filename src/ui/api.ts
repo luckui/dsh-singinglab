@@ -8,13 +8,16 @@ export interface Hit { bvid: string; page: number; title: string; up: string; du
 export type { LyricLine, Section, SongDetail, SongSummary } from '../library';
 export type { EditOp } from '../editor';
 
-/** 修音页要的：音高（base64 float32，10 ms 一帧）、调、做过的改动、歌词、有哪几层频谱 */
+/** 学歌每一步的分轨：原曲 → 伴奏 / 人声（含和声）→ 主唱 / 和声 → 干声（去混响） */
+export type Stem = 'orig' | 'inst' | 'vocals' | 'lead' | 'back' | 'dry';
+
+/** 修音页要的：音高（base64 float32，10 ms 一帧）、调、做过的改动、歌词、有哪几轨 */
 export interface EditData {
   id: string; title: string; artist: string; durationSec: number; frames: number;
   raw: string; plan: string | null;
   state: { autoKey: number; key: number; ops: import('../editor').EditOp[] };
   lyrics: import('../library').LyricLine[];
-  layers: Array<'vocals' | 'dry' | 'back'>;
+  layers: Stem[];
   /** 这次打开后保存过：歌库里的版本换了，试听要绕过缓存 */
   savedAt?: number;
 }
@@ -49,7 +52,7 @@ export const api = {
     return body as EditData;
   },
   editSpecUrl: (id: string, layer: string) => `${BASE}/edit-spec?id=${encodeURIComponent(id)}&layer=${layer}`,
-  editAudioUrl: (id: string, name: 'vocals' | 'accomp' | 'phrase', key: number) => `${BASE}/edit-audio?id=${encodeURIComponent(id)}&name=${name}&key=${key}`,
+  editAudioUrl: (id: string, name: Stem | 'accomp' | 'phrase', key: number) => `${BASE}/edit-audio?id=${encodeURIComponent(id)}&name=${name}&key=${key}`,
   editPhrase: (id: string, start: number, end: number, f0: string, key: number) => post<{ start: number; end: number; renderSec: number }>('edit-phrase', { id, start, end, f0, key }),
   editSave: (id: string, f0: string, key: number, ops: import('../editor').EditOp[]) => post<{ sec: number; editedAt: number }>('edit-save', { id, f0, key, ops }),
   jobs: (after = 0) => get<{ jobs: Job[]; missing: string | null; commands: Array<{ id: number; type: 'play' | 'edited'; songId: string }> }>(`jobs?after=${after}`),

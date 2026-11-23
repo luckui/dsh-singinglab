@@ -17,7 +17,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { api, type EditData, type EditOp } from './api';
+import { api, type EditData, type EditOp, type Stem } from './api';
 import { getEngine } from './engine';
 import { Icon } from './icons';
 import { FPS, HER_HIGH, HER_LOW, compose, hzOf, marksOf, midiOf, noteName, notesOf, type Note, type Range } from '../pitch';
@@ -46,7 +46,17 @@ function encode(a: Float32Array): string {
   return btoa(bin);
 }
 
-type Mode = 'synth' | 'her' | 'orig' | 'mix';
+type Mode = 'synth' | 'her' | 'stem' | 'mix';
+
+/** 分轨的名字和它是学歌的哪一步（按钮的说明） */
+const STEMS: Record<Stem, [string, string]> = {
+  orig: ['原曲', '从 B 站取下来的原曲'],
+  inst: ['伴奏', '第 1 步分出来的伴奏'],
+  vocals: ['人声', '第 1 步去掉伴奏：主唱和和声都在'],
+  lead: ['主唱', '第 2 步去掉和声，只剩主唱（还带着混响）。和声没拆干净的地方，频谱上还看得到第二条线'],
+  back: ['和声', '第 2 步拆出来的和声'],
+  dry: ['干声', '第 3 步主唱去掉混响：她就是照着这一轨唱的'],
+};
 type Tool = 'select' | 'draw' | 'cut';
 
 const PARTIALS = [0, 1, 0.32, 0.1, 0.04]; // 长笛一样：基音为主，一点点二三次谐波
@@ -209,7 +219,9 @@ export function Editor({ id, onClose }: Props) {
   const [ops, setOps] = useState<EditOp[]>([]);
   const [redo, setRedo] = useState<EditOp[]>([]);
   const [key, setKey] = useState(0);
-  const [layer, setLayer] = useState<'vocals' | 'dry' | 'back'>('vocals');
+  const [layer, setLayer] = useState<Stem>('vocals');
+  const layerRef = useRef<Stem>('vocals');
+  layerRef.current = layer;
   const [glow, setGlow] = useState<'strong' | 'weak' | 'off'>('weak');
   const [sel, setSel] = useState<Range | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -323,11 +335,12 @@ export function Editor({ id, onClose }: Props) {
         }
         playFrom.current = hit.start;
         p.playBuffer(hit.buf, hit.start, hit.start, 'her');
-      } else if (m === 'orig') {
-        setBusy('取原唱…');
-        const buf = await p.buffer(api.editAudioUrl(id, 'vocals', 0));
+      } else if (m === 'stem') {
+        const stem = layerRef.current;
+        setBusy(`取${STEMS[stem][0]}…`);
+        const buf = await p.buffer(api.editAudioUrl(id, stem, 0));
         setBusy(null);
-        p.playBuffer(buf, from, 0, 'orig', 1, to);
+        p.playBuffer(buf, from, 0, 'stem', 1, to);
       } else {
         setBusy('取歌库里的版本…');
         const buf = await p.buffer(`${api.audioUrl(id)}&v=${data.savedAt ?? 0}`);
@@ -466,16 +479,22 @@ export function Editor({ id, onClose }: Props) {
               <button className={tool === 'draw' ? 'is-on' : ''} onClick={() => setTool('draw')} title="画笔：画音高线（B）">画笔</button>
               <button className={tool === 'cut' ? 'is-on' : ''} onClick={() => setTool('cut')} title="剪刀：点音符剪成两个，双击剪口合回去（K）">剪刀</button>
             </div>
-            <div className="sl-ed-seg" title="底下的频谱图：哪一轨、多亮">
+            <div className="sl-ed-seg" title="学歌的每一步分出来的轨：底下的频谱看哪一轨；试听选「听这一轨」就听它">
               {data.layers.map((l) => (
-                <button key={l} className={layer === l ? 'is-on' : ''} onClick={() => { setLayer(l); if (glow === 'off') setGlow('weak'); }}>{l === 'vocals' ? '原人声（含和声）' : l === 'dry' ? '主唱干声' : '和声'}</button>
+                <button key={l} className={layer === l ? 'is-on' : ''} title={STEMS[l][1]}
+                  onClick={() => { setLayer(l); if (glow === 'off') setGlow('weak'); if (mode === 'stem' && preview.current?.playing) playSoon(head.current, lastPlay.current?.to); }}>
+                  {STEMS[l][0]}
+                </button>
               ))}
               <button onClick={() => setGlow((g) => (g === 'strong' ? 'weak' : g === 'weak' ? 'off' : 'strong'))} title="频谱亮度">{glow === 'strong' ? '亮' : glow === 'weak' ? '暗' : '关'}</button>
             </div>
             <div className="sl-ed-seg" title="试听（空格：播放 / 停）">
               <button className={loop ? 'is-on' : ''} onClick={() => setLoop((l) => !l)} title="循环播放选中的一段（L）：边循环边改，下一圈就是改过的"><Icon name="repeat" size={15} /></button>
-              {(['synth', 'her', 'orig', 'mix'] as Mode[]).map((m) => (
-                <button key={m} className={mode === m ? 'is-on' : ''} onClick={() => setMode(m)}>{m === 'synth' ? '乐器音' : m === 'her' ? '她的声音' : m === 'orig' ? '原唱' : '歌库里的版本'}</button>
+              {(['synth', 'her', 'stem', 'mix'] as Mode[]).map((m) => (
+                <button key={m} className={mode === m ? 'is-on' : ''} onClick={() => setMode(m)}
+                  title={m === 'synth' ? '长笛按她要唱的音高吹，配移好调的伴奏' : m === 'her' ? '她的声音唱这一段（只渲染这一段）' : m === 'stem' ? `听底下频谱的那一轨（现在是${STEMS[layer][0]}）` : '歌库里现在的版本'}>
+                  {m === 'synth' ? '乐器音' : m === 'her' ? '她的声音' : m === 'stem' ? `听${STEMS[layer][0]}` : '歌库里的版本'}
+                </button>
               ))}
             </div>
             <div className="sl-ed-seg" title="缩放">
@@ -533,7 +552,7 @@ export function Editor({ id, onClose }: Props) {
 
 interface RollProps {
   id: string; data: EditData; raw: Float32Array; f0: Float32Array; keyShift: number;
-  layer: 'vocals' | 'dry' | 'back'; glow: 'strong' | 'weak' | 'off';
+  layer: Stem; glow: 'strong' | 'weak' | 'off';
   sel: Range | null; onSel: (s: Range | null) => void;
   tool: Tool; onOp: (op: EditOp) => void; playSoon: (from: number, to?: number) => void;
   notes: Note[];

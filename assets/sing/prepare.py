@@ -183,12 +183,15 @@ def mix_song(cover: Path, inst: Path, back: Path | None, out: Path) -> None:
 
 
 def keep_edit(work: Path, out: Path, key: int, scores: dict) -> None:
-    """修音页要用的：干声（重新转她的声音用，无损）、原人声和和声（看频谱、听原唱）、没移调的伴奏、测到的和修过的音高"""
+    """修音页要用的：学歌每一步的分轨（原曲、伴奏、人声、主唱、和声、干声，看频谱、对比着听）、没移调的伴奏、测到的和修过的音高。干声无损（重新转她的声音用）"""
     edit = out / "edit"; edit.mkdir(parents=True, exist_ok=True)
     mp3 = lambda src, dst: run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-c:a", "libmp3lame", "-q:a", "2", str(dst)])
     run(["ffmpeg", "-v", "error", "-y", "-i", str(work / "dry.wav"), "-ac", "1", "-c:a", "flac", str(edit / "dry.flac")])
-    mp3(work / "vocals.wav", edit / "vocals.mp3")
-    mp3(work / "inst.wav", edit / "inst.mp3")
+    mp3(work / "mix.wav", edit / "orig.mp3")        # 原曲（B 站取下来的，截到最长时长）
+    mp3(work / "vocals.wav", edit / "vocals.mp3")    # 去掉伴奏：人声（含和声）
+    mp3(work / "inst.wav", edit / "inst.mp3")        # 伴奏
+    if (work / "lead.wav").exists():
+        mp3(work / "lead.wav", edit / "lead.mp3")    # 去掉和声：主唱（还没去混响）
     if (work / "back.wav").exists():
         mp3(work / "back.wav", edit / "back.mp3")
     for name in ("raw.npy", "pitch.npy"):

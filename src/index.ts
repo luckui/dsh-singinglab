@@ -21,8 +21,8 @@
  *
  * 修音页（一首歌学的时候留下了 edit/ 才能修，见 editor.ts）：
  *   GET  /api/dsh-singinglab/edit?id=…                 音高（测到的 raw、自动修过的 plan，base64 float32，10 ms 一帧）、调、做过的改动、歌词
- *   GET  /api/dsh-singinglab/edit-spec?id=…&layer=…    频谱图 PNG：vocals 原人声（含和声）/ dry 主唱干声 / back 和声
- *   GET  /api/dsh-singinglab/edit-audio?id=…&name=…    vocals 原人声、accomp 伴奏（&key= 移到这个调）、phrase 刚渲染的那一句
+ *   GET  /api/dsh-singinglab/edit-spec?id=…&layer=…    频谱图 PNG，学歌每一步的分轨：orig 原曲 / inst 伴奏 / vocals 人声（含和声）/ lead 主唱 / back 和声 / dry 干声
+ *   GET  /api/dsh-singinglab/edit-audio?id=…&name=…    上面这些分轨的音频；accomp 伴奏 + 和声（&key= 移到这个调）；phrase 刚渲染的那一句
  *   POST /api/dsh-singinglab/edit-phrase {id, start, end, f0, key}   用她的声音渲染这一句（和伴奏混好）
  *   POST /api/dsh-singinglab/edit-save   {id, f0, key, ops}           整首重新转、重新混音，换掉 mix.mp3
  *
@@ -210,6 +210,12 @@ export function apply(ctx: HostContext): void {
     return { dir, edit: editDir(dir), rt: await studio!.editRuntime(dir) };
   };
   const f0In = (s: unknown) => (typeof s === 'string' && s.length < 4_000_000 ? s : null);
+  /** 学歌每一步的分轨（按流水线的顺序）；以前学的歌可能只有其中几轨 */
+  const STEMS: Array<[string, string, string]> = [
+    ['orig', 'orig.mp3', 'audio/mpeg'], ['inst', 'inst.mp3', 'audio/mpeg'], ['vocals', 'vocals.mp3', 'audio/mpeg'],
+    ['lead', 'lead.mp3', 'audio/mpeg'], ['back', 'back.mp3', 'audio/mpeg'], ['dry', 'dry.flac', 'audio/flac'],
+  ];
+  const stemsIn = async (edit: string) => (await Promise.all(STEMS.map(async ([k, f]) => ((await stat(join(edit, f)).then(() => true, () => false)) ? k : null)))).filter((k): k is string => !!k);
 
   // 大肥鱼修音用：和修音页同一份数据、同一个常驻进程
   runtime.pitch = {
@@ -243,7 +249,7 @@ export function apply(ctx: HostContext): void {
       return json({
         ok: true, id, title: song?.title ?? id, artist: song?.artist ?? '', durationSec: info.durationSec, frames: info.frames,
         raw: b64(raw), plan: plan ? b64(plan) : null, state, lyrics: song?.lyrics ?? [],
-        layers: ['vocals', 'dry', ...(await stat(join(edit, 'back.mp3')).then(() => ['back'], () => []))],
+        layers: await stemsIn(edit),
       });
     } catch (err) {
       return json({ ok: false, error: (err as Error).message, relearn: !!(err as { relearn?: boolean }).relearn }, 409);
@@ -252,7 +258,7 @@ export function apply(ctx: HostContext): void {
 
   route('/api/dsh-singinglab/edit-spec', ['GET'], async (request) => {
     const layer = new URL(request.url).searchParams.get('layer') ?? 'vocals';
-    if (!['vocals', 'dry', 'back'].includes(layer)) return json({ ok: false, error: 'bad layer' }, 400);
+    if (!STEMS.some(([k]) => k === layer)) return json({ ok: false, error: 'bad layer' }, 400);
     const { edit, rt } = await editable(idOf(request));
     const out = await worker.call(rt, { cmd: 'spec', dir: edit, layer });
     return new Response(await readFile(out.file) as Uint8Array<ArrayBuffer>, { headers: { 'content-type': 'image/png', 'cache-control': 'private, max-age=600' } });
@@ -262,7 +268,8 @@ export function apply(ctx: HostContext): void {
     const q = new URL(request.url).searchParams;
     const { edit, rt } = await editable(idOf(request));
     const name = q.get('name');
-    if (name === 'vocals') return serveFile(request, join(edit, 'vocals.mp3'), 'audio/mpeg');
+    const stem = STEMS.find(([k]) => k === name);
+    if (stem) return serveFile(request, join(edit, stem[1]), stem[2]);
     if (name === 'phrase') return serveFile(request, join(edit, 'phrase.wav'), 'audio/wav', 'no-store');
     if (name === 'accomp') {
       const out = await worker.call(rt, { cmd: 'accomp', dir: edit, key: Number(q.get('key')) || 0 });
