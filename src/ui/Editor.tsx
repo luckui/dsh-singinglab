@@ -1,7 +1,8 @@
 /**
  * 修音页：一首歌她要唱的音高，叠在频谱图上。
  *   - 频谱图可以换「原人声（含和声）」「主唱干声」「和声」：和声把音测错的地方，频谱上能看到两条声部
- *   - 白色的是她要唱的音，一段一段的音符可以上下拖（按半音）；橙色虚线是原来测到的音（和自动修的不一样的地方才画）
+ *   - 音符块对齐半音格，可以上下拖；白线是她要唱的音高线；橙色虚线是原来测到的音（和现在不一样的地方才画）
+ *   - 工具：选择（拖音符、拖出一段）/ 画音高线（像 OpenUTAU：自动识别的线上局部手画）/ 对准（音的中心挪到最近的半音，颤音留着）
  *   - 选一段：升 / 降八度、升 / 降半音、恢复成测到的、恢复成自动修的
  *   - 整首移调：带子是她唱着不哑的音域（大肥鱼默认声音实测 A#3–E5），音符跑出带子的地方她会哑
  *   - 试听：乐器音（长笛，马上就有，不吃显卡）/ 她的声音（只渲染选中的这一句）/ 原唱 / 现在歌库里的版本
@@ -44,8 +45,16 @@ function compose(raw: Float32Array, plan: Float32Array | null, ops: EditOp[]): F
   const f = Float32Array.from(plan ?? raw);
   for (const op of ops) {
     const a = Math.max(0, op.a), b = Math.min(f.length, op.b);
+    if (op.kind === 'snap') {
+      for (const n of notesOf(f.subarray(a, b))) {
+        const k = 2 ** ((Math.round(n.midi) - n.midi) / 12);
+        for (let i = a + n.a; i < a + n.b; i++) f[i] *= k;
+      }
+      continue;
+    }
     for (let i = a; i < b; i++) {
       if (op.kind === 'source') f[i] = op.source === 'raw' ? raw[i] : (plan ?? raw)[i];
+      else if (op.kind === 'draw') { const hz = op.hz[i - op.a]; if (f[i] > 0 && hz > 0) f[i] = hz; }
       else if (f[i] > 0) f[i] *= 2 ** (op.semitones / 12);
     }
   }
@@ -74,6 +83,7 @@ function notesOf(f: Float32Array): Note[] {
 }
 
 type Mode = 'synth' | 'her' | 'orig' | 'mix';
+type Tool = 'select' | 'draw' | 'snap';
 
 /** 试听：都用 WebAudio 放，播放头的时间才准 */
 class Preview {
@@ -167,6 +177,8 @@ export function Editor({ id, onClose }: Props) {
   const [mode, setMode] = useState<Mode>('synth');
   const [playing, setPlaying] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [tool, setTool] = useState<Tool>('select');
+  const [glow, setGlow] = useState<'strong' | 'weak' | 'off'>('weak');
   const preview = useRef<Preview | null>(null);
 
   useEffect(() => {
@@ -235,6 +247,13 @@ export function Editor({ id, onClose }: Props) {
     }
   }, [data, f0, id, key]);
 
+  // 拖完、画完马上试听：等这次改动画进音高线之后再放（setTimeout 时已经是新的 play）
+  const playRef = useRef(play);
+  playRef.current = play;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const playSoon = (from: number, to?: number) => { setTimeout(() => void playRef.current(modeRef.current, from, to), 0); };
+
   const save = async () => {
     if (!f0 || !data) return;
     stop();
@@ -289,23 +308,31 @@ export function Editor({ id, onClose }: Props) {
       ) : (
         <>
           <div className="sl-ed-bar">
-            <div className="sl-ed-seg" title="背景的频谱图">
-              {data.layers.map((l) => (
-                <button key={l} className={layer === l ? 'is-on' : ''} onClick={() => setLayer(l)}>{l === 'vocals' ? '原人声（含和声）' : l === 'dry' ? '主唱干声' : '和声'}</button>
+            <div className="sl-ed-seg" title="工具">
+              {(['select', 'draw', 'snap'] as Tool[]).map((t) => (
+                <button key={t} className={tool === t ? 'is-on' : ''} onClick={() => setTool(t)}>{t === 'select' ? '选择' : t === 'draw' ? '画音高线' : '对准'}</button>
               ))}
+            </div>
+            <div className="sl-ed-seg" title="底下的频谱图：哪一轨、多亮">
+              {data.layers.map((l) => (
+                <button key={l} className={layer === l ? 'is-on' : ''} onClick={() => { setLayer(l); if (glow === 'off') setGlow('weak'); }}>{l === 'vocals' ? '原人声（含和声）' : l === 'dry' ? '主唱干声' : '和声'}</button>
+              ))}
+              <button className="sl-ed-glow" onClick={() => setGlow((g) => (g === 'strong' ? 'weak' : g === 'weak' ? 'off' : 'strong'))} title="频谱亮度">
+                {glow === 'strong' ? '亮' : glow === 'weak' ? '暗' : '关'}
+              </button>
             </div>
             <div className="sl-ed-seg" title="试听（空格：播放 / 停）">
               {(['synth', 'her', 'orig', 'mix'] as Mode[]).map((m) => (
                 <button key={m} className={mode === m ? 'is-on' : ''} onClick={() => setMode(m)}>{m === 'synth' ? '乐器音' : m === 'her' ? '她的声音（这一句）' : m === 'orig' ? '原唱' : '歌库里的版本'}</button>
               ))}
             </div>
-            <span className="sl-ed-hint">{busy ?? note ?? '拖音符改音高 · 拖空白处选一段 · 空格试听'}</span>
+            <span className="sl-ed-hint">{busy ?? note ?? (tool === 'draw' ? '在音高线上按住画 · 只改有声音的地方' : tool === 'snap' ? '点一个音：对准最近的半音' : '拖音符改音高 · 拖空白处选一段 · 空格试听')}</span>
           </div>
           <Roll
             id={id} data={data} raw={raw} plan={plan} f0={f0} ops={ops} keyShift={key} layer={layer} sel={sel} onSel={setSel}
-            onShift={(n, semis) => apply({ a: n.a, b: n.b, kind: 'shift', semitones: semis })}
+            tool={tool} glow={glow} onOp={apply}
             preview={preview} playing={playing} onPlaying={setPlaying}
-            onPlay={(from, to) => void play(mode, from, to)} onStop={stop} mode={mode}
+            onPlay={(from, to) => void play(mode, from, to)} onPlaySoon={playSoon} onStop={stop} mode={mode}
           />
           <footer className="sl-ed-foot">
             <span className="sl-ed-sel">{sel ? `选中 ${clock(sel.a / FPS)} – ${clock(sel.b / FPS)}` : '没选中：改动对着整首'}</span>
@@ -313,6 +340,7 @@ export function Editor({ id, onClose }: Props) {
               {([['升八度', 12], ['降八度', -12], ['升半音', 1], ['降半音', -1]] as const).map(([label, n]) => (
                 <button key={label} disabled={!sel} onClick={() => sel && apply({ ...sel, kind: 'shift', semitones: n })}>{label}</button>
               ))}
+              <button disabled={!sel} onClick={() => sel && apply({ ...sel, kind: 'snap' })} title="这一段里每个音对准最近的半音（颤音、滑音留着）">对准半音</button>
               <button disabled={!sel} onClick={() => sel && apply({ ...sel, kind: 'source', source: 'raw' })} title="这一段用原来测到的音（不要自动修）">用测到的</button>
               {plan ? <button disabled={!sel} onClick={() => sel && apply({ ...sel, kind: 'source', source: 'plan' })} title="这一段恢复成自动修过的音">用自动修的</button> : null}
               <button disabled={!ops.length} onClick={undo}>撤销</button>
@@ -327,13 +355,14 @@ export function Editor({ id, onClose }: Props) {
 interface RollProps {
   id: string; data: EditData; raw: Float32Array; plan: Float32Array | null; f0: Float32Array; ops: EditOp[]; keyShift: number;
   layer: 'vocals' | 'dry' | 'back'; sel: { a: number; b: number } | null; onSel: (s: { a: number; b: number } | null) => void;
-  onShift: (n: Note, semitones: number) => void;
+  tool: Tool; glow: 'strong' | 'weak' | 'off'; onOp: (op: EditOp) => void;
+  onPlaySoon: (from: number, to?: number) => void;
   preview: React.MutableRefObject<Preview | null>; playing: boolean; onPlaying: (v: boolean) => void;
   onPlay: (from: number, to?: number) => void; onStop: () => void; mode: Mode;
 }
 
 function Roll(props: RollProps) {
-  const { id, data, raw, f0, keyShift, layer, sel, onSel, onShift, preview, playing, onPlaying, onPlay, onStop } = props;
+  const { id, data, raw, f0, keyShift, layer, sel, onSel, tool, glow, onOp, onPlaySoon, preview, playing, onPlaying, onPlay, onStop } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 900, h: 480 });
@@ -341,7 +370,10 @@ function Roll(props: RollProps) {
   const [, setTick] = useState(0);
   const redraw = () => setTick((t) => t + 1);
   const head = useRef(0);
-  const drag = useRef<null | { kind: 'note'; note: Note; y0: number; d: number } | { kind: 'sel'; a: number; x0: number; moved: boolean }>(null);
+  const drag = useRef<null
+    | { kind: 'note'; note: Note; y0: number; d: number }
+    | { kind: 'sel'; a: number; x0: number; moved: boolean }
+    | { kind: 'draw'; hz: Map<number, number>; last: { i: number; m: number } }>(null);
   const spec = useRef<HTMLImageElement | null>(null);
   const notes = useMemo(() => notesOf(f0), [f0]);
 
@@ -432,7 +464,7 @@ function Roll(props: RollProps) {
     // 频谱
     const img = spec.current;
     if (img) {
-      g.save(); g.globalAlpha = 0.9; g.imageSmoothingEnabled = true;
+      g.save(); g.globalAlpha = glow === 'strong' ? 0.9 : glow === 'weak' ? 0.4 : 0; g.imageSmoothingEnabled = true;
       const sx = v.t0 * FPS, sw = (t1 - v.t0) * FPS;
       const binTop = (MIDI_HI - v.top) * 3, binH = (v.top - mAt(H)) * 3;
       // 第 r 行像素的中心是 MIDI 95.67 - r/3（CQT 从 MIDI 36 起每半音 3 格，图上下翻过）
@@ -457,15 +489,19 @@ function Roll(props: RollProps) {
       pen = true;
     }
     g.stroke(); g.setLineDash([]);
-    // 音符
+    // 音符块：对齐到最近的半音格，像钢琴卷帘；块上写音名（她实际唱的音，带上移调）
     const dragging = drag.current?.kind === 'note' ? drag.current : null;
+    g.font = '600 10px system-ui, sans-serif'; g.textBaseline = 'middle';
     for (const n of notes) {
       if (n.b / FPS < v.t0 || n.a / FPS > t1) continue;
       const d = dragging && dragging.note.a === n.a ? dragging.d : 0;
-      const out = n.midi + keyShift + d > HER_HIGH + 0.5 || n.midi + keyShift + d < HER_LOW - 0.5;
-      g.fillStyle = out ? 'rgba(255,120,140,.42)' : 'rgba(110,180,255,.38)';
-      const nx = x(n.a / FPS), nw = Math.max(2, (n.b - n.a) / FPS * v.pps);
-      g.beginPath(); g.roundRect(nx, y(n.midi + d) - v.spx * 0.45, nw, v.spx * 0.9, 4); g.fill();
+      const row = Math.round(n.midi) + d;
+      const out = row + keyShift > HER_HIGH || row + keyShift < HER_LOW;
+      const nx = x(n.a / FPS), nw = Math.max(3, (n.b - n.a) / FPS * v.pps - 1), ny = y(row) - v.spx * 0.46, nh = v.spx * 0.92;
+      g.fillStyle = out ? 'rgba(236,92,118,.78)' : (d ? 'rgba(120,200,255,.9)' : 'rgba(62,126,224,.82)');
+      g.beginPath(); g.roundRect(nx, ny, nw, nh, 3); g.fill();
+      g.strokeStyle = out ? 'rgba(255,170,185,.9)' : 'rgba(160,205,255,.85)'; g.lineWidth = 1; g.stroke();
+      if (nw > 30 && v.spx >= 9) { g.fillStyle = 'rgba(255,255,255,.92)'; g.fillText(noteName(row + keyShift), nx + 4, y(row) + 0.5); }
     }
     // 她要唱的音高线
     g.strokeStyle = '#ffffff'; g.lineWidth = 1.6;
@@ -479,6 +515,17 @@ function Roll(props: RollProps) {
       pen = true;
     }
     g.stroke();
+    // 正在画的那一段：黄色
+    if (drag.current?.kind === 'draw' && drag.current.hz.size) {
+      g.strokeStyle = '#ffd866'; g.lineWidth = 2; g.beginPath();
+      let prev = -2;
+      for (const [i, hz] of [...drag.current.hz.entries()].sort((p, q) => p[0] - q[0])) {
+        const px = x(i / FPS), py = y(midiOf(hz));
+        if (i === prev + 1) g.lineTo(px, py); else g.moveTo(px, py);
+        prev = i;
+      }
+      g.stroke();
+    }
     // 琴键
     g.fillStyle = '#0a0e1a'; g.fillRect(0, RULER, KEYW, H - RULER);
     g.font = '10px system-ui, sans-serif'; g.textBaseline = 'middle';
@@ -509,28 +556,57 @@ function Roll(props: RollProps) {
 
   const hitNote = (px: number, py: number): Note | null => {
     const t = tAt(px) * FPS, m = mAt(py);
-    return notes.find((n) => t >= n.a && t <= n.b && Math.abs(n.midi - m) < 0.6) ?? null;
+    // 点在音符块上（对齐到半音格的那一行）或者点在块里的音高线附近都算
+    return notes.find((n) => t >= n.a && t <= n.b && (Math.abs(Math.round(n.midi) - m) < 0.55 || Math.abs(n.midi - m) < 0.6)) ?? null;
   };
 
   const onDown = (e: React.PointerEvent) => {
     const r = canvas.current!.getBoundingClientRect();
     const px = e.clientX - r.left, py = e.clientY - r.top;
     if (px < KEYW) return;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* 拿不到也能拖，只是拖出画布就停 */ }
     if (py < RULER) { head.current = Math.max(0, tAt(px)); onSel(null); redraw(); return; }
     const n = hitNote(px, py);
+    if (tool === 'snap') {
+      if (n) { onOp({ a: n.a, b: n.b, kind: 'snap' }); onSel({ a: n.a, b: n.b }); onPlaySoon(Math.max(0, n.a / FPS - 0.4), n.b / FPS + 0.4); }
+      return;
+    }
+    if (tool === 'draw') {
+      const i = Math.round(tAt(px) * FPS), m = mAt(py);
+      drag.current = { kind: 'draw', hz: new Map(), last: { i, m } };
+      paint(i, m, i, m);
+      redraw();
+      return;
+    }
     drag.current = n ? { kind: 'note', note: n, y0: py, d: 0 } : { kind: 'sel', a: Math.max(0, Math.round(tAt(px) * FPS)), x0: px, moved: false };
+  };
+
+  /** 画音高线：从上一点到这一点之间的每一帧按直线插值；只画原来有声音的帧（气声、辅音不硬塞音高） */
+  const paint = (i0: number, m0: number, i1: number, m1: number) => {
+    const d = drag.current;
+    if (d?.kind !== 'draw') return;
+    const [a, b] = i0 <= i1 ? [i0, i1] : [i1, i0];
+    for (let i = Math.max(0, a); i <= Math.min(f0.length - 1, b); i++) {
+      if (!(f0[i] > 0)) continue;
+      const m = a === b ? m1 : m0 + (m1 - m0) * ((i - i0) / (i1 - i0));
+      d.hz.set(i, 440 * 2 ** ((m - 69) / 12));
+    }
   };
 
   const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) {
       const r = canvas.current!.getBoundingClientRect();
-      canvas.current!.style.cursor = hitNote(e.clientX - r.left, e.clientY - r.top) ? 'ns-resize' : 'crosshair';
+      const over = hitNote(e.clientX - r.left, e.clientY - r.top);
+      canvas.current!.style.cursor = tool === 'draw' ? 'crosshair' : tool === 'snap' ? (over ? 'pointer' : 'default') : over ? 'ns-resize' : 'crosshair';
       return;
     }
     const r = canvas.current!.getBoundingClientRect();
-    if (d.kind === 'note') {
+    if (d.kind === 'draw') {
+      const i = Math.round(tAt(e.clientX - r.left) * FPS), m = mAt(e.clientY - r.top);
+      paint(d.last.i, d.last.m, i, m);
+      d.last = { i, m };
+    } else if (d.kind === 'note') {
       d.d = Math.round((d.y0 - (e.clientY - r.top)) / v.spx);
     } else {
       const px = e.clientX - r.left;
@@ -545,11 +621,25 @@ function Roll(props: RollProps) {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
-    if (d.kind === 'note') {
+    if (d.kind === 'draw') {
+      if (d.hz.size) {
+        const idx = [...d.hz.keys()];
+        const a = Math.min(...idx), b = Math.max(...idx) + 1;
+        // 轻轻抹平手抖（3 帧滑动平均），取整到 0.1 Hz 存起来
+        const hz = Array.from({ length: b - a }, (_, k) => {
+          let sum = 0, n = 0;
+          for (let j = -1; j <= 1; j++) { const v0 = d.hz.get(a + k + j); if (v0) { sum += v0; n++; } }
+          return d.hz.has(a + k) && n ? Math.round((sum / n) * 10) / 10 : 0;
+        });
+        onOp({ a, b, kind: 'draw', hz });
+        onSel({ a, b });
+        onPlaySoon(Math.max(0, a / FPS - 0.4), b / FPS + 0.4); // 画完马上听
+      }
+    } else if (d.kind === 'note') {
       if (d.d) {
-        onShift(d.note, d.d);
+        onOp({ a: d.note.a, b: d.note.b, kind: 'shift', semitones: d.d });
         onSel({ a: d.note.a, b: d.note.b });
-        onPlay(Math.max(0, d.note.a / FPS - 0.4), d.note.b / FPS + 0.4); // 拖完马上听一下这个音
+        onPlaySoon(Math.max(0, d.note.a / FPS - 0.4), d.note.b / FPS + 0.4); // 拖完马上听一下这个音
       } else {
         onSel({ a: d.note.a, b: d.note.b });
       }

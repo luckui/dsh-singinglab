@@ -111,7 +111,11 @@ export interface EditState {
 /** 一次改动：一段时间（10 ms 一帧）里的音高怎么处理 */
 export type EditOp =
   | { a: number; b: number; kind: 'shift'; semitones: number }
-  | { a: number; b: number; kind: 'source'; source: 'raw' | 'plan' };
+  | { a: number; b: number; kind: 'source'; source: 'raw' | 'plan' }
+  /** 手画的音高线：从第 a 帧起每帧的音高（Hz，取整到 0.1）；只改原来有声音的帧 */
+  | { a: number; b: number; kind: 'draw'; hz: number[] }
+  /** 对准：这一段里每个音整体挪到最近的半音（颤音、滑音都留着） */
+  | { a: number; b: number; kind: 'snap' };
 
 export const editDir = (songDir: string) => join(songDir, 'edit');
 
