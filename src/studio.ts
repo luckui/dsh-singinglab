@@ -6,7 +6,7 @@
  * 手动模式（设置里填了 python 和 sing.json）给愿意折腾的人：用他自己的环境，不走这些。
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildConfig, modelsFor, resolveRecipe, type RecipeChoice } from './recipe';
 import { Setup } from './setup';
@@ -88,21 +88,35 @@ export class Studio {
     }
   }
 
+  /** 跑学歌程序的环境变量：插件自己的环境要带上 ffmpeg 所在的 bin 目录 */
+  private env(managed: boolean): NodeJS.ProcessEnv {
+    const baseEnv = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
+    if (!managed) return baseEnv;
+    const sep = process.platform === 'win32' ? ';' : ':';
+    return { ...baseEnv, KMP_DUPLICATE_LIB_OK: 'TRUE', HF_HUB_OFFLINE: '1', PATH: `${join(this.setup.root, 'bin')}${sep}${process.env.PATH ?? ''}` };
+  }
+
+  /** 修音页的常驻进程用什么跑：学这首歌时的配置（配方模式在歌的目录里有 recipe.json；手动模式用设置里的 sing.json） */
+  async editRuntime(songDir: string): Promise<{ python: string; env: NodeJS.ProcessEnv; cfg: string }> {
+    const own = join(songDir, 'recipe.json');
+    const managed = await stat(own).then((st) => st.isFile(), () => false);
+    const cfgPath = managed ? own : this.settings().config;
+    if (!cfgPath) throw new Error('找不到学这首歌时用的配置，修不了');
+    const cfg = JSON.parse((await readFile(cfgPath, 'utf8')).replace(/^\uFEFF/, ''));
+    const python = String(cfg.rvcPython || (managed ? this.setup.python : this.settings().python));
+    return { python, env: this.env(managed), cfg: cfgPath };
+  }
+
   async plan(out: string): Promise<Plan> {
     const s = this.settings();
-    const baseEnv = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
-    if (this.manual) return { python: s.python, config: s.config, key: null, remote: s.remote, env: baseEnv, recipe: 'manual' };
+    if (this.manual) return { python: s.python, config: s.config, key: null, remote: s.remote, env: this.env(false), recipe: 'manual' };
     const recipe = this.recipe();
     const voice = await this.voices.get(s.voice);
     const { config, key } = await buildConfig(this.catalog, recipe.use, this.shelf, this.setup, voice);
     await mkdir(out, { recursive: true });
     const file = join(out, 'recipe.json');
     await writeFile(file, JSON.stringify({ recipe: recipe.id, voice: voice?.name, ...config }, null, 2));
-    const sep = process.platform === 'win32' ? ';' : ':';
-    return {
-      python: this.setup.python, config: file, key, remote: '', recipe: recipe.id,
-      env: { ...baseEnv, KMP_DUPLICATE_LIB_OK: 'TRUE', HF_HUB_OFFLINE: '1', PATH: `${join(this.setup.root, 'bin')}${sep}${process.env.PATH ?? ''}` },
-    };
+    return { python: this.setup.python, config: file, key, remote: '', recipe: recipe.id, env: this.env(true) };
   }
 
   async status() {

@@ -6,6 +6,18 @@ export type { Job } from '../learner';
 export interface Hit { bvid: string; page: number; title: string; up: string; durationSec: number; views: number; cover: string; guess: string }
 
 export type { LyricLine, Section, SongDetail, SongSummary } from '../library';
+export type { EditOp } from '../editor';
+
+/** 修音页要的：音高（base64 float32，10 ms 一帧）、调、做过的改动、歌词、有哪几层频谱 */
+export interface EditData {
+  id: string; title: string; artist: string; durationSec: number; frames: number;
+  raw: string; plan: string | null;
+  state: { autoKey: number; key: number; ops: import('../editor').EditOp[] };
+  lyrics: import('../library').LyricLine[];
+  layers: Array<'vocals' | 'dry' | 'back'>;
+  /** 这次打开后保存过：歌库里的版本换了，试听要绕过缓存 */
+  savedAt?: number;
+}
 
 const BASE = '/api/dsh-singinglab';
 
@@ -29,7 +41,17 @@ export const api = {
   audioUrl: (id: string) => `${BASE}/audio?id=${encodeURIComponent(id)}`,
   coverUrl: (id: string) => `${BASE}/cover?id=${encodeURIComponent(id)}`,
   search: (q: string) => post<{ hits: Hit[] }>('search', { q }).then((r) => r.hits),
-  learn: (req: { bvid: string; page?: number; title: string; artist?: string; autoplay?: boolean }) => post<{ job: Job }>('learn', req).then((r) => r.job),
+  learn: (req: { bvid: string; page?: number; title: string; artist?: string; autoplay?: boolean; relearn?: boolean }) => post<{ job: Job }>('learn', req).then((r) => r.job),
+  edit: async (id: string): Promise<EditData> => {
+    const res = await fetch(`${BASE}/edit?id=${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+    const body = await res.json();
+    if (!body.ok) throw Object.assign(new Error(body.error ?? `HTTP ${res.status}`), { relearn: !!body.relearn });
+    return body as EditData;
+  },
+  editSpecUrl: (id: string, layer: string) => `${BASE}/edit-spec?id=${encodeURIComponent(id)}&layer=${layer}`,
+  editAudioUrl: (id: string, name: 'vocals' | 'accomp' | 'phrase', key: number) => `${BASE}/edit-audio?id=${encodeURIComponent(id)}&name=${name}&key=${key}`,
+  editPhrase: (id: string, start: number, end: number, f0: string, key: number) => post<{ start: number; end: number; renderSec: number }>('edit-phrase', { id, start, end, f0, key }),
+  editSave: (id: string, f0: string, key: number, ops: import('../editor').EditOp[]) => post<{ sec: number; editedAt: number }>('edit-save', { id, f0, key, ops }),
   jobs: (after = 0) => get<{ jobs: Job[]; missing: string | null; commands: Array<{ id: number; type: 'play'; songId: string }> }>(`jobs?after=${after}`),
   cancel: (id: string) => post<{ ok: boolean }>('cancel', { id }),
   imgUrl: (u: string) => `${BASE}/img?u=${encodeURIComponent(u)}`,

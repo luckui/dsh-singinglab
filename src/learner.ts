@@ -8,7 +8,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { constants, setPriority } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -35,6 +35,8 @@ export interface Job {
   autoplay: boolean;
   /** 哪个 DSH 会话让学的：学完（或没学成）告诉那个会话里的她 */
   session?: string;
+  /** 已经会唱也重学一遍（修音页要的分轨以前没留） */
+  relearn?: boolean;
   queuedAt: number;
   startedAt?: number;
   endedAt?: number;
@@ -47,6 +49,7 @@ export interface LearnRequest {
   artist?: string;
   autoplay?: boolean;
   session?: string;
+  relearn?: boolean;
 }
 
 export interface LearnerOptions {
@@ -157,7 +160,7 @@ export class Learner {
     this.jobs = this.jobs.filter((j) => j.id !== id);
     const job: Job = {
       id, bvid: req.bvid, page, title: req.title.trim().slice(0, 60) || req.bvid, artist: (req.artist ?? '').trim().slice(0, 40), who: '', cover: '',
-      state: 'queued', label: '排队中', progress: 0, autoplay: req.autoplay ?? true, ...(req.session ? { session: req.session } : {}), queuedAt: Date.now(),
+      state: 'queued', label: '排队中', progress: 0, autoplay: req.autoplay ?? true, ...(req.session ? { session: req.session } : {}), ...(req.relearn ? { relearn: true } : {}), queuedAt: Date.now(),
     };
     this.jobs.push(job);
     const finished = this.jobs.filter((j) => j.state === 'done' || j.state === 'failed');
@@ -217,8 +220,12 @@ export class Learner {
   private async work(job: Job): Promise<void> {
     const lack = await this.options.check();
     if (lack) throw new Error(lack);
-    const out = join(this.options.songsDir, job.id);
-    if (existsSync(join(out, 'song.json')) && existsSync(join(out, 'mix.mp3'))) return; // 已经学会了
+    const final = join(this.options.songsDir, job.id);
+    const learned = existsSync(join(final, 'song.json')) && existsSync(join(final, 'mix.mp3'));
+    if (learned && !job.relearn) return; // 已经学会了
+    // 重学：先学到旁边的 .relearn-<id>（歌库不列点开头的目录），学成了再换掉旧的；没学成旧的还在
+    const out = learned ? join(this.options.songsDir, `.relearn-${job.id}`) : final;
+    if (learned) rmSync(out, { recursive: true, force: true });
     const info = await this.bili.info(job.bvid);
     if (!info) throw new Error('B 站上找不到这个视频（可能删了或者要登录才能看）');
     const part = info.parts.find((p) => p.page === job.page) ?? info.parts[0];
@@ -248,6 +255,13 @@ export class Learner {
     }
     rmSync(audio, { force: true });
     if (!existsSync(join(out, 'song.json')) || !existsSync(join(out, 'mix.mp3'))) throw new Error('学完了却没有生成歌曲文件');
+    if (out !== final) {
+      for (const name of readdirSync(out)) {
+        rmSync(join(final, name), { recursive: true, force: true });
+        renameSync(join(out, name), join(final, name));
+      }
+      rmSync(out, { recursive: true, force: true });
+    }
   }
 
   /** 传音频过去，在那台机器上跑 prepare.py（那台机器的 sing.json 旁边要有同一套 prepare.py），把歌曲包取回来 */

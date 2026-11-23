@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type IconName = 'play' | 'pause' | 'prev' | 'next' | 'shuffle' | 'repeat' | 'repeat1' | 'volume' | 'mute' | 'down' | 'search' | 'fish' | 'note' | 'list' | 'close' | 'sun' | 'moon' | 'auto' | 'gear';
+export type IconName = 'play' | 'pause' | 'prev' | 'next' | 'shuffle' | 'repeat' | 'repeat1' | 'volume' | 'mute' | 'down' | 'search' | 'fish' | 'note' | 'list' | 'close' | 'sun' | 'moon' | 'auto' | 'gear' | 'tune';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   play: <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" fill="currentColor" stroke="none" />,
@@ -21,6 +21,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   sun: <g><circle cx="12" cy="12" r="4" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4" /></g>,
   moon: <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />,
   auto: <g><circle cx="12" cy="12" r="8" /><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor" stroke="none" /></g>,
+  tune: <g><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2.2" /><circle cx="9" cy="17" r="2.2" /><path d="M4 12h16" opacity=".45" /></g>,
   note: <g><path d="M9 18V6l10-2v12" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="16.5" cy="16" r="2.5" /></g>,
 };
 

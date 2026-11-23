@@ -263,6 +263,7 @@ function Controls({ onList, listOpen, theme, onTheme }: { onList: () => void; li
         <Icon name={theme === 'auto' ? 'auto' : theme === 'day' ? 'sun' : 'moon'} size={18} />
       </button>
       <button className={`sl-ctl sl-small ${listOpen ? 'is-on' : ''}`} onClick={onList} title="歌单"><Icon name="list" size={19} /></button>
+      <button className="sl-ctl sl-small" onClick={() => s.current && engine.openEditor(s.current.id)} disabled={!s.current} title="修音：看她唱的音高，改音、移调"><Icon name="tune" size={19} /></button>
     </div>
   );
 }

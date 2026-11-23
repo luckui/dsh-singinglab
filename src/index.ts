@@ -7,7 +7,7 @@
  *   GET  /api/dsh-singinglab/cover?id=…       封面（B 站视频封面，第一次取时缓存到本地）
  *   GET  /api/dsh-singinglab/settings         设置；POST 同路径改设置
  *   POST /api/dsh-singinglab/search  {q}      在 B 站搜视频（q 是 BV 号或链接时直接给那个视频）
- *   POST /api/dsh-singinglab/learn   {bvid, page?, title, artist?, autoplay?}   学一首（排队）
+ *   POST /api/dsh-singinglab/learn   {bvid, page?, title, artist?, autoplay?, relearn?}   学一首（排队）；relearn = 会唱也重学
  *   GET  /api/dsh-singinglab/jobs             学歌进度：正在学的、排队的、最近学完的
  *   POST /api/dsh-singinglab/cancel  {id}     取消一首
  *   GET  /api/dsh-singinglab/studio           学歌准备好了没有、缺什么、环境/模型/声音/配方的状态
@@ -18,6 +18,13 @@
  *   POST /api/dsh-singinglab/voice?kind=model|index&name=…&id=…   上传声音文件（请求体就是文件）
  *   POST /api/dsh-singinglab/voice-import {path, name?}   从电脑上的路径导入声音
  *   POST /api/dsh-singinglab/voice-use {id} / voice-remove {id} / voice-rename {id, name}
+ *
+ * 修音页（一首歌学的时候留下了 edit/ 才能修，见 editor.ts）：
+ *   GET  /api/dsh-singinglab/edit?id=…                 音高（测到的 raw、自动修过的 plan，base64 float32，10 ms 一帧）、调、做过的改动、歌词
+ *   GET  /api/dsh-singinglab/edit-spec?id=…&layer=…    频谱图 PNG：vocals 原人声（含和声）/ dry 主唱干声 / back 和声
+ *   GET  /api/dsh-singinglab/edit-audio?id=…&name=…    vocals 原人声、accomp 伴奏（&key= 移到这个调）、phrase 刚渲染的那一句
+ *   POST /api/dsh-singinglab/edit-phrase {id, start, end, f0, key}   用她的声音渲染这一句（和伴奏混好）
+ *   POST /api/dsh-singinglab/edit-save   {id, f0, key, ops}           整首重新转、重新混音，换掉 mix.mp3
  *
  * 数据目录：DSH_HOME/dsh-singinglab。歌库目录默认是其中的 songs，设置里可以再加别的目录（只读）。
  */
@@ -30,6 +37,7 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { Bili, guessTitle, parseVideoRef } from './bili';
 import { Covers } from './covers';
+import { EditWorker, b64, editDir, hasEdit, readEditState, readNpy, writeEditState, type EditOp } from './editor';
 import { Learner } from './learner';
 import type { RecipeChoice } from './recipe';
 import { loadCatalog } from './shelf';
@@ -108,10 +116,10 @@ const songsDirOf = (s: Settings) => s.songsDir || join(dataDir, 'songs');
 const libraryDirs = (s: Settings) => [songsDirOf(s), ...s.libraries];
 
 /** 音频按 Range 回一段；浏览器拖进度条、边下边放都靠它 */
-async function serveFile(request: Request, file: string, type: string): Promise<Response> {
+async function serveFile(request: Request, file: string, type: string, cache = 'private, max-age=3600'): Promise<Response> {
   const size = (await stat(file)).size;
   const range = request.headers.get('range')?.match(/^bytes=(\d*)-(\d*)$/);
-  const base = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=3600' };
+  const base = { 'content-type': type, 'accept-ranges': 'bytes', 'cache-control': cache };
   if (!range || (range[1] === '' && range[2] === '')) {
     return new Response(Readable.toWeb(createReadStream(file)) as ReadableStream, { headers: { ...base, 'content-length': String(size) } });
   }
@@ -156,6 +164,8 @@ export function apply(ctx: HostContext): void {
   })();
   runtime.ready = ready;
   ctx.effect(() => () => learner?.close(), 'dsh-singinglab learner');
+  const worker = new EditWorker(join(assetsDir, 'sing', 'edit_worker.py'));
+  ctx.effect(() => () => worker.close(), 'dsh-singinglab edit worker');
 
   const route = (path: string, methods: string[], fetch: (request: Request) => Response | Promise<Response>) =>
     ctx.effect(() => ctx.connection.fetch.register({
@@ -184,7 +194,81 @@ export function apply(ctx: HostContext): void {
     const id = idOf(request);
     if (!validId(id)) return json({ ok: false, error: 'bad id' }, 400);
     const file = await library.audioPath(id);
-    return file ? serveFile(request, file, 'audio/mpeg') : json({ ok: false, error: '没有音频' }, 404);
+    // 修音保存后 mix.mp3 会换：不让浏览器拿旧的缓存
+    return file ? serveFile(request, file, 'audio/mpeg', 'no-cache') : json({ ok: false, error: '没有音频' }, 404);
+  });
+
+  // ── 修音页 ──
+  /** 能修的歌：在自己的歌库目录里（别的目录只读），学的时候留下了 edit/ */
+  const editable = async (id: string | null) => {
+    if (!validId(id)) throw new Error('bad id');
+    const dir = await library.dirOf(id);
+    if (!dir) throw new Error('歌库里没有这首');
+    if (!dir.startsWith(songsDirOf(settings))) throw new Error('这首在只读的歌库目录里，修不了');
+    if (!(await hasEdit(dir))) throw Object.assign(new Error('这首是以前学的，没留下修音要用的分轨：重学一遍就能修'), { relearn: true });
+    return { dir, edit: editDir(dir), rt: await studio!.editRuntime(dir) };
+  };
+  const f0In = (s: unknown) => (typeof s === 'string' && s.length < 4_000_000 ? s : null);
+
+  route('/api/dsh-singinglab/edit', ['GET'], async (request) => {
+    const id = idOf(request);
+    try {
+      const { dir, edit, rt } = await editable(id);
+      const info = await worker.call(rt, { cmd: 'info', dir: edit, cfg: rt.cfg });
+      const [raw, plan, state, song] = await Promise.all([readNpy(join(edit, 'raw.npy')), readNpy(join(edit, 'plan.npy')), readEditState(dir), library.detail(id!)]);
+      if (!raw) return json({ ok: false, error: '没有测到的音高' }, 500);
+      // 后台先把声音模型、移好调的伴奏准备好（排在队里，第一句试听会等它）
+      void worker.call(rt, { cmd: 'warm', dir: edit, cfg: rt.cfg, key: state.key }).catch(() => {});
+      return json({
+        ok: true, id, title: song?.title ?? id, artist: song?.artist ?? '', durationSec: info.durationSec, frames: info.frames,
+        raw: b64(raw), plan: plan ? b64(plan) : null, state, lyrics: song?.lyrics ?? [],
+        layers: ['vocals', 'dry', ...(await stat(join(edit, 'back.mp3')).then(() => ['back'], () => []))],
+      });
+    } catch (err) {
+      return json({ ok: false, error: (err as Error).message, relearn: !!(err as { relearn?: boolean }).relearn }, 409);
+    }
+  });
+
+  route('/api/dsh-singinglab/edit-spec', ['GET'], async (request) => {
+    const layer = new URL(request.url).searchParams.get('layer') ?? 'vocals';
+    if (!['vocals', 'dry', 'back'].includes(layer)) return json({ ok: false, error: 'bad layer' }, 400);
+    const { edit, rt } = await editable(idOf(request));
+    const out = await worker.call(rt, { cmd: 'spec', dir: edit, layer });
+    return new Response(await readFile(out.file) as Uint8Array<ArrayBuffer>, { headers: { 'content-type': 'image/png', 'cache-control': 'private, max-age=600' } });
+  });
+
+  route('/api/dsh-singinglab/edit-audio', ['GET'], async (request) => {
+    const q = new URL(request.url).searchParams;
+    const { edit, rt } = await editable(idOf(request));
+    const name = q.get('name');
+    if (name === 'vocals') return serveFile(request, join(edit, 'vocals.mp3'), 'audio/mpeg');
+    if (name === 'phrase') return serveFile(request, join(edit, 'phrase.wav'), 'audio/wav', 'no-store');
+    if (name === 'accomp') {
+      const out = await worker.call(rt, { cmd: 'accomp', dir: edit, key: Number(q.get('key')) || 0 });
+      return serveFile(request, out.file, 'audio/mpeg');
+    }
+    return json({ ok: false, error: 'bad name' }, 400);
+  });
+
+  route('/api/dsh-singinglab/edit-phrase', ['POST'], async (request) => {
+    const body = await request.json().catch(() => ({})) as { id?: string; start?: number; end?: number; f0?: string; key?: number };
+    const { edit, rt } = await editable(body.id ?? null);
+    const f0 = f0In(body.f0);
+    if (!f0 || !(Number(body.end) > Number(body.start))) return json({ ok: false, error: '要渲染哪一段？' }, 400);
+    const out = await worker.call(rt, { cmd: 'phrase', dir: edit, cfg: rt.cfg, start: Number(body.start), end: Math.min(Number(body.end), Number(body.start) + 60), f0, key: Number(body.key) || 0 });
+    return json({ ok: true, start: out.start, end: out.end, renderSec: out.renderSec });
+  });
+
+  route('/api/dsh-singinglab/edit-save', ['POST'], async (request) => {
+    const body = await request.json().catch(() => ({})) as { id?: string; f0?: string; key?: number; ops?: EditOp[] };
+    const { dir, edit, rt } = await editable(body.id ?? null);
+    const f0 = f0In(body.f0);
+    if (!f0) return json({ ok: false, error: '没有音高' }, 400);
+    const key = Math.max(-24, Math.min(24, Math.round(Number(body.key) || 0)));
+    const state = await readEditState(dir);
+    await writeEditState(dir, { ...state, key, ops: Array.isArray(body.ops) ? body.ops.slice(0, 2000) : state.ops });
+    const out = await worker.call(rt, { cmd: 'save', dir: edit, cfg: rt.cfg, f0, key });
+    return json({ ok: true, sec: out.sec, editedAt: out.editedAt });
   });
 
   route('/api/dsh-singinglab/cover', ['GET'], async (request) => {
@@ -244,12 +328,12 @@ export function apply(ctx: HostContext): void {
   });
 
   route('/api/dsh-singinglab/learn', ['POST'], async (request) => {
-    const body = await request.json().catch(() => ({})) as { bvid?: string; page?: number; title?: string; artist?: string; autoplay?: boolean };
+    const body = await request.json().catch(() => ({})) as { bvid?: string; page?: number; title?: string; artist?: string; autoplay?: boolean; relearn?: boolean };
     const ref = parseVideoRef(String(body.bvid ?? ''));
     if (!ref || !learner) return json({ ok: false, error: '没有 BV 号' }, 400);
     const lack = await studio!.check();
     if (lack) return json({ ok: false, error: lack, needs: await studio!.needs() }, 409);
-    const job = learner.learn({ bvid: ref.bvid, page: body.page ?? ref.page, title: String(body.title ?? ''), artist: body.artist, autoplay: body.autoplay !== false });
+    const job = learner.learn({ bvid: ref.bvid, page: body.page ?? ref.page, title: String(body.title ?? ''), artist: body.artist, autoplay: body.autoplay !== false, relearn: body.relearn === true });
     return json({ ok: true, job });
   });
 

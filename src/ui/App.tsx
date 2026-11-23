@@ -6,6 +6,7 @@ import { getEngine } from './engine';
 import { LearnPill, Toast } from './Learning';
 import { Library } from './Library';
 import { StudioPanel } from './Studio';
+import { Editor } from './Editor';
 import { NowPlaying } from './NowPlaying';
 import type { SceneSpec, Theme } from './scene';
 
@@ -63,6 +64,7 @@ export function App() {
   const [theme, pref, cycleTheme] = useTheme();
   const [studioOpen, setStudioOpen] = useState(false);
   const studioAsk = useSyncExternalStore(engine.subscribe, () => engine.state.studioAsk);
+  const editing = useSyncExternalStore(engine.subscribe, () => engine.state.editing);
   useEffect(() => { if (studioAsk) setStudioOpen(true); }, [studioAsk]);
   const spec = useScene(theme);
 
@@ -72,7 +74,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-      if (!document.querySelector('.sl-root')) return;
+      if (!document.querySelector('.sl-root') || document.querySelector('.sl-editor')) return;
       if (e.code === 'Space') { e.preventDefault(); engine.toggle(); }
       else if (e.code === 'ArrowRight' && view === 'now') engine.seek(engine.time + 5);
       else if (e.code === 'ArrowLeft' && view === 'now') engine.seek(engine.time - 5);
@@ -100,6 +102,7 @@ export function App() {
       </div>
       <Toast />
       <StudioPanel open={studioOpen} onClose={() => setStudioOpen(false)} />
+      {editing ? <Editor key={editing} id={editing} onClose={() => engine.openEditor(null)} /> : null}
     </div>
   );
 }

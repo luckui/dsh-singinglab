@@ -27,6 +27,8 @@ export interface PlayerState {
   toast: { id: number; text: string; songId?: string } | null;
   /** 要打开「学歌设置」（点了学歌但还没准备好） */
   studioAsk: number;
+  /** 要打开修音页的那首歌 */
+  editing: string | null;
 }
 
 type Listener = () => void;
@@ -52,7 +54,7 @@ class Engine {
   state: PlayerState = {
     songs: [], queue: [], index: -1, current: null, loading: false, playing: false,
     duration: 0, volume: readVolume(), shuffle: false, repeat: 'all', error: null,
-    jobs: [], learnMissing: null, toast: null, studioAsk: 0,
+    jobs: [], learnMissing: null, toast: null, studioAsk: 0, editing: null,
   };
   private jobTimer = 0;
   private seenDone = new Set<string>();
@@ -141,6 +143,22 @@ class Engine {
 
   openStudio(): void {
     this.set({ studioAsk: Date.now() });
+  }
+
+  openEditor(id: string | null): void {
+    if (id) this.audio.pause(); // 修音页自己试听，播放器先停，不叠在一起
+    this.set({ editing: id });
+  }
+
+  /** 修音保存后歌库里的 mix.mp3 换了：正在放这首就从原来的位置接着放新的 */
+  reloadSong(id: string): void {
+    if (this.state.current?.id !== id) return;
+    const at = this.audio.currentTime, was = !this.audio.paused;
+    this.audio.src = `${api.audioUrl(id)}&v=${Date.now()}`;
+    this.audio.addEventListener('loadedmetadata', () => {
+      this.audio.currentTime = at;
+      if (was) void this.audio.play().catch(() => {});
+    }, { once: true });
   }
 
   async cancelJob(id: string): Promise<void> {

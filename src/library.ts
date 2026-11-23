@@ -40,7 +40,7 @@ export interface SongDetail extends SongSummary {
   source: string;
 }
 
-const ID = /^[\w.-]{1,80}$/;
+const ID = /^[\w-][\w.-]{0,79}$/; // 不以点开头：.relearn-<id> 是正在重学的临时目录
 export const validId = (id: string | null): id is string => !!id && ID.test(id) && id !== '.' && id !== '..';
 
 const bvidOf = (id: string, source: string): string | null => (id.match(/^(BV[0-9A-Za-z]{10})/) ?? source.match(/(BV[0-9A-Za-z]{10})/))?.[1] ?? null;
@@ -129,6 +129,11 @@ export class Library {
   async detail(id: string): Promise<SongDetail | null> {
     const dir = await this.locate(id);
     return dir ? this.load(id, dir) : null;
+  }
+
+  /** 歌所在的目录（修音页要读写里面的 edit/） */
+  async dirOf(id: string): Promise<string | null> {
+    return this.locate(id);
   }
 
   async audioPath(id: string): Promise<string | null> {

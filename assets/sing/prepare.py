@@ -6,7 +6,8 @@
 
     python prepare.py --config sing.json --audio song.wav --out songs/<id> --title 歌名
 
-中间文件留在 <out>/work，同一步已有结果就跳过；成功后删掉 work，只留 song.json、mix.mp3。
+中间文件留在 <out>/work，同一步已有结果就跳过；成功后删掉 work，只留 song.json、mix.mp3，
+和修音页要用的 <out>/edit（干声、原人声、和声、伴奏、测到的和修过的音高；配置 keepEdit: false 就不留）。
 配置见 sing.example.json。没配 karaoke、dereverb 就跳过这一步。
 """
 
@@ -132,9 +133,9 @@ def rvc(cfg: dict, source: Path, out: Path, key: int, plan: Path | None) -> None
 
 
 def pitch_fix(cfg: dict, dry: Path, vocals: Path, back: Path, out: Path) -> dict:
-    """干声音高里被和声拉低一个八度的地方升回去（pitch_fix.py），返回每一层改了多少"""
+    """干声音高里被和声拉低一个八度的地方升回去（pitch_fix.py），返回每一层改了多少。原始测量存在 out 旁边的 raw.npy"""
     text = run([cfg["rvcPython"], str(Path(__file__).with_name("pitch_fix.py")), "--applio", cfg["applioDir"],
-                "--dry", str(dry), "--vocals", str(vocals), "--back", str(back), "--out", str(out)])
+                "--dry", str(dry), "--vocals", str(vocals), "--back", str(back), "--out", str(out), "--raw-out", str(out.with_name("raw.npy"))])
     return json.loads([line for line in text.splitlines() if line.startswith("{")][-1])
 
 
@@ -167,6 +168,33 @@ def sections_of(mix: np.ndarray, downbeats: list[float]) -> list[dict]:
         else:
             merged.append(run_)
     return [{"startSec": round(edges[m["start"]], 3), "endSec": round(edges[m["start"] + m["bars"]], 3), "kind": m["kind"]} for m in merged]
+
+
+def mix_song(cover: Path, inst: Path, back: Path | None, out: Path) -> None:
+    """她的声音 + 伴奏 + 和声 → mix.mp3（伴奏、和声要已经移好调）"""
+    inputs = ["-i", str(cover), "-i", str(inst)]
+    graph = "[0:a]aresample=44100,loudnorm=I=-16:TP=-2:LRA=11,aformat=channel_layouts=stereo[v];[1:a]volume=0.6[b];"
+    if back and back.exists():
+        inputs += ["-i", str(back)]
+        graph += "[2:a]volume=0.4[h];[v][b][h]amix=inputs=3:duration=longest:normalize=0,alimiter=limit=0.95[m]"
+    else:
+        graph += "[v][b]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[m]"
+    run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", graph, "-map", "[m]", "-c:a", "libmp3lame", "-q:a", "2", str(out)])
+
+
+def keep_edit(work: Path, out: Path, key: int, scores: dict) -> None:
+    """修音页要用的：干声（重新转她的声音用，无损）、原人声和和声（看频谱、听原唱）、没移调的伴奏、测到的和修过的音高"""
+    edit = out / "edit"; edit.mkdir(parents=True, exist_ok=True)
+    mp3 = lambda src, dst: run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-c:a", "libmp3lame", "-q:a", "2", str(dst)])
+    run(["ffmpeg", "-v", "error", "-y", "-i", str(work / "dry.wav"), "-ac", "1", "-c:a", "flac", str(edit / "dry.flac")])
+    mp3(work / "vocals.wav", edit / "vocals.mp3")
+    mp3(work / "inst.wav", edit / "inst.mp3")
+    if (work / "back.wav").exists():
+        mp3(work / "back.wav", edit / "back.mp3")
+    for name in ("raw.npy", "pitch.npy"):
+        if (work / name).exists():
+            shutil.copy(work / name, edit / ("plan.npy" if name == "pitch.npy" else name))
+    (edit / "edit.json").write_text(json.dumps({"format": 1, "autoKey": key, "key": key, "keyScores": scores, "ops": []}, ensure_ascii=False), encoding="utf-8")
 
 
 def mouth_of(vocal: np.ndarray) -> list[float]:
@@ -270,6 +298,9 @@ def main() -> None:
     n = min(len(mix), len(voc))
     inst_path = work / "inst.wav"
     sf.write(inst_path, mix[:n] - voc[:n], SR, subtype="PCM_16")
+    # 移调之前把修音页要的存下来（伴奏、和声都是原调的）
+    if cfg.get("keepEdit", True):
+        keep_edit(work, out, key, scores)
     if backing_shift(key):
         shift_backing(inst_path, backing_shift(key))
         if back_path.exists():
@@ -282,14 +313,7 @@ def main() -> None:
     times["analyze"] = round(time.time() - t, 1); emit(step="analyze", state="done", sec=times["analyze"], bpm=rhythm["bpm"])
 
     t = time.time()
-    inputs = ["-i", str(cv_path), "-i", str(inst_path)]
-    graph = "[0:a]aresample=44100,loudnorm=I=-16:TP=-2:LRA=11,aformat=channel_layouts=stereo[v];[1:a]volume=0.6[b];"
-    if back_path.exists():
-        inputs += ["-i", str(back_path)]
-        graph += "[2:a]volume=0.4[h];[v][b][h]amix=inputs=3:duration=longest:normalize=0,alimiter=limit=0.95[m]"
-    else:
-        graph += "[v][b]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[m]"
-    run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", graph, "-map", "[m]", "-c:a", "libmp3lame", "-q:a", "2", str(out / "mix.mp3")])
+    mix_song(cv_path, inst_path, back_path, out / "mix.mp3")
     times["mix"] = round(time.time() - t, 1); emit(step="mix", state="done", sec=times["mix"])
 
     song = {"format": 1, "title": a.title, "artist": a.artist, "source": a.source, "who": a.who, "durationSec": round(n / SR, 2), "keyShift": key, "keyScores": scores, "quality": checked, "pitchFix": fixed, "model": Path(cfg["rvcModel"]).stem,

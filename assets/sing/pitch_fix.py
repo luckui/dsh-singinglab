@@ -249,6 +249,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--applio", required=True); ap.add_argument("--dry", required=True); ap.add_argument("--vocals", required=True)
     ap.add_argument("--back", required=True); ap.add_argument("--out", required=True)
+    ap.add_argument("--raw-out", default="")  # 也存下 RMVPE 原始测量（修音页拿它当「测到的」那条线）
     a = ap.parse_args()
     dry = librosa.load(a.dry, sr=16000, mono=True)[0].astype(np.float32)
     raw = rmvpe_f0(a.applio, dry)
@@ -265,6 +266,8 @@ def main() -> None:
     blip, blips = blip_rule(rep, raw, back_rel)
     plan, undone = edge_rule(blip, raw)
     np.save(a.out, plan)
+    if a.raw_out:
+        np.save(a.raw_out, raw)
     up = lambda x: round(float(np.sum((raw > 0) & (x > raw * 1.5))) / 100, 2)
     print(json.dumps({"windowSec": up(win), "repeatSec": round(up(rep) - up(win), 2), "blips": blips, "undone": undone, "raisedSec": up(plan), "lowLeadSec": leadSec}), flush=True)
 
