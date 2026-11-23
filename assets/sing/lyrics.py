@@ -58,7 +58,8 @@ def parse_lrc(text: str) -> list[list]:
 
 def tokens(text: str) -> list[str]:
     """中日文一个字一个单位，英文、数字一个词一个单位（带着后面的空格，排版时好拼回去）"""
-    return re.findall(r"[A-Za-z0-9'’]+\s*|[^\sA-Za-z0-9'’]\s*", text)
+    # 词：连着的字母（含带长音符号的拉丁字母）、数字；中日文和标点一个字一个
+    return re.findall(r"(?:[^\W_぀-ヿ㐀-鿿]|['’])+\s*|[^\s]\s*", text)
 
 
 def features(dry: np.ndarray, sr: int) -> dict:
@@ -70,7 +71,7 @@ def features(dry: np.ndarray, sr: int) -> dict:
     return {"voiced": voiced, "rises": np.flatnonzero(voiced[1:] & ~voiced[:-1]) + 1, "peaks": np.asarray(peaks, float)}
 
 
-def fit(lines: list[list], f: dict) -> tuple[float, float]:
+def fit(lines: list[list], f: dict, span: float = 20) -> tuple[float, float]:
     """最好的整体平移，和这时有几成行首落在起音 ±0.15 秒内。挑平移按离起音多近打软分，对得一样多时取最准的那个"""
     starts = np.array([s for s, _ in lines]) * 100; rises = f["rises"]
     if not len(rises):
@@ -79,7 +80,7 @@ def fit(lines: list[list], f: dict) -> tuple[float, float]:
         j = np.clip(np.searchsorted(rises, idx), 1, len(rises) - 1)
         return np.minimum(np.abs(rises[j] - idx), np.abs(rises[j - 1] - idx))
     best, score = 0.0, -1.0
-    for off in np.arange(-20, 20, .05):
+    for off in np.arange(-span, span, .05):
         d = dist(starts + off * 100)
         sc = float(np.clip(1 - d / 15, 0, 1).mean())
         if sc > score:
@@ -170,3 +171,112 @@ def pick(title: str, f: dict, heard: str, search=None, lyric=None) -> tuple[list
         report["reason"] = f"词对上了，但这一版只有 {round(hit * 100)}% 的行对得上起唱，不用"
         return [], report
     return timed(lines, off, f), report
+
+
+# ── 给定歌词文本，对到她唱的干声上（翻唱改了节奏也能对） ──────────────────────────────
+# 网易云那版的行首时间对不上（翻唱改了节奏、换了编曲）、或者用户自己贴的歌词，走这条：
+# 语音识别把干声里每个字（拉丁文每个字母）的时间听出来，歌词按顺序逐字对上去（最长公共子序列），
+# 一句里对上的字定出这句的起止，对不上的字、整句没对上的句子按前后对上的时间插值。
+
+def _units(text: str) -> list[str]:
+    """比对单位：中日文一个字，拉丁字母一个字母（去掉长音符号、统一小写）；听错一两个字母也还能对上大半"""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", text.lower())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.findall(r"[぀-ヿ㐀-鿿]|[a-z0-9]", t)
+
+
+def heard_units(y16k: np.ndarray, model_path: str, language: str | None = None) -> list[tuple[str, float, float]]:
+    """整首听一遍，带每个词的时间；一个词里的字平均分它的时间"""
+    from faster_whisper import WhisperModel
+    model = WhisperModel(model_path, device="cuda", compute_type="float16")
+    # 不开 VAD：它把唱歌当成不是在说话，会切掉一大半
+    segs, _ = model.transcribe(y16k.astype(np.float32), vad_filter=False, beam_size=5, word_timestamps=True,
+                               language=language, condition_on_previous_text=False, no_speech_threshold=0.9)
+    out = []
+    for s in segs:
+        for w in s.words or []:
+            us = _units(w.word)
+            d = (w.end - w.start) / max(1, len(us))
+            out += [(u, w.start + k * d, w.start + (k + 1) * d) for k, u in enumerate(us)]
+    return out
+
+
+def guess_language(texts: list[str]) -> str | None:
+    t = "".join(texts)
+    if re.search(r"[぀-ヿ]", t):
+        return "ja"
+    if re.search(r"[㐀-鿿]", t):
+        return "zh"
+    if re.search(r"[āēīōūȳ]", t.lower()) or re.search(r"(?:quoniam|sapientiam|dominus|deus)", t.lower()):
+        return "la"  # 拉丁文（长音符号、常见的词）：告诉它，不然会当成意大利语、英语去听
+    return None  # 英文等：让它自己听
+
+
+def align(texts: list[str], heard: list[tuple[str, float, float]]) -> tuple[list[dict], dict]:
+    """歌词（一行一句）逐字对到听出来的时间上，返回和 pick() 一样格式的歌词，和对上了多少"""
+    from difflib import SequenceMatcher
+    lyr = []   # (单位, 第几行, 这行第几个 token)
+    toks_per_line = [tokens(t) for t in texts]
+    for li, toks in enumerate(toks_per_line):
+        for ti, tok in enumerate(toks):
+            lyr += [(u, li, ti) for u in _units(tok)]
+    a, b = [u for u, _, _ in lyr], [u for u, _, _ in heard]
+    when: dict[int, tuple[float, float]] = {}
+    for m in SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks():
+        for k in range(m.size):
+            when[m.a + k] = (heard[m.b + k][1], heard[m.b + k][2])
+    # 每个 token 的时间 = 它第一个对上的单位的时间；每行起止 = 对上的单位里最早、最晚
+    tok_t: dict[tuple[int, int], float] = {}
+    line_se: dict[int, list[float]] = {}
+    for idx, (_, li, ti) in enumerate(lyr):
+        if idx in when:
+            tok_t.setdefault((li, ti), when[idx][0])
+            se = line_se.setdefault(li, [when[idx][0], when[idx][1]])
+            se[0], se[1] = min(se[0], when[idx][0]), max(se[1], when[idx][1])
+    units_per_line = [len([1 for _, li2, _ in lyr if li2 == li]) for li in range(len(texts))]
+    matched_per_line = [len([i for i, (_, li2, _) in enumerate(lyr) if li2 == li and i in when]) for li in range(len(texts))]
+    # 对上不到三成的行不信它的时间（多半是零星撞上的字），按前后插值
+    good = [li for li in range(len(texts)) if units_per_line[li] and matched_per_line[li] / units_per_line[li] >= 0.3 and li in line_se]
+    starts = {li: line_se[li][0] for li in good}
+    ends = {li: line_se[li][1] for li in good}
+    out = []
+    for li, text in enumerate(texts):
+        if li not in starts:
+            prev = max((g for g in good if g < li), default=None)
+            nxt = min((g for g in good if g > li), default=None)
+            s = ends[prev] + 0.2 if prev is not None else (starts[nxt] - 3 if nxt is not None else 0.0)
+            e = starts[nxt] - 0.2 if nxt is not None else s + 3
+            n_between = (nxt if nxt is not None else len(texts)) - (prev if prev is not None else -1) - 1
+            k = li - (prev if prev is not None else -1) - 1
+            span = max(0.5, e - s) / max(1, n_between)
+            s, e = s + k * span, s + (k + 1) * span
+        else:
+            s, e = starts[li], ends[li]
+        toks = toks_per_line[li]
+        at = [tok_t.get((li, ti)) for ti in range(len(toks))]
+        known = [(ti, t) for ti, t in enumerate(at) if t is not None and s - 0.05 <= t <= e + 0.05]
+        filled = []
+        for ti in range(len(toks)):
+            left = max(((k2, t) for k2, t in known if k2 <= ti), default=None)
+            right = min(((k2, t) for k2, t in known if k2 >= ti), default=None)
+            if left and right and right[0] != left[0]:
+                t = left[1] + (right[1] - left[1]) * (ti - left[0]) / (right[0] - left[0])
+            elif left:
+                t = left[1] if left[0] == ti else left[1] + (e - left[1]) * (ti - left[0]) / max(1, len(toks) - left[0])
+            elif right:
+                t = s + (right[1] - s) * ti / max(1, right[0])
+            else:
+                t = s + (e - s) * ti / max(1, len(toks))
+            filled.append(t)
+        filled = list(np.maximum.accumulate(filled)) if filled else []
+        out.append({"start": round(float(s), 3), "end": round(float(max(e, s + 0.3)), 3), "text": text, "tokens": toks, "at": [round(float(x), 3) for x in filled]})
+    # 行与行按时间排好、不倒退
+    for i in range(1, len(out)):
+        if out[i]["start"] < out[i - 1]["start"]:
+            out[i]["start"] = out[i - 1]["end"]
+            out[i]["end"] = max(out[i]["end"], out[i]["start"] + 0.3)
+            out[i]["at"] = [max(x, out[i]["start"]) for x in out[i]["at"]]
+    report = {"found": True, "method": "whisper-align", "lines": len(texts), "linesMatched": len(good),
+              "unitsMatched": round(len(when) / max(1, len(lyr)), 3), "heardUnits": len(heard)}
+    return out, report

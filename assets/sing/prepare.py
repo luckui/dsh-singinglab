@@ -263,6 +263,15 @@ def main() -> None:
             raise RuntimeError("sing.json 没配 whisperModel，核对不了是不是这首歌的词")
         y16 = librosa.resample(dry, orig_sr=SR, target_sr=lyric_finder.SR)
         lines, found = lyric_finder.pick(a.title, lyric_finder.features(y16, lyric_finder.SR), lyric_finder.transcribe(y16, cfg["whisperModel"]))
+        # 词对上了、行首时间对不上（翻唱改了节奏）：整首听一遍，歌词逐字对到干声上
+        if not lines and found.get("id"):
+            lrc = lyric_finder.get(f"{lyric_finder.API}/song/lyric?id={found['id']}&lv=1&tv=-1").get("lrc", {}).get("lyric", "")
+            texts = [w for _, w in lyric_finder.parse_lrc(lrc)]
+            if len(texts) >= 4:
+                heard = lyric_finder.heard_units(y16, cfg["whisperModel"], lyric_finder.guess_language(texts))
+                aligned, rep = lyric_finder.align(texts, heard)
+                if rep["linesMatched"] >= len(texts) * 0.5:
+                    lines, found = aligned, {**found, **rep, "found": True, "reason": None}
     except Exception as err:
         lines, found = [], {"found": False, "reason": f"{type(err).__name__}: {err}"[:200]}
     times["lyrics"] = round(time.time() - t, 1)
