@@ -29,6 +29,8 @@ export interface PlayerState {
   studioAsk: number;
   /** 要打开修音页的那首歌 */
   editing: string | null;
+  /** 大肥鱼在对话里改了哪首的音高（修音页开着那首就刷新） */
+  edited: { songId: string; at: number } | null;
 }
 
 type Listener = () => void;
@@ -54,7 +56,7 @@ class Engine {
   state: PlayerState = {
     songs: [], queue: [], index: -1, current: null, loading: false, playing: false,
     duration: 0, volume: readVolume(), shuffle: false, repeat: 'all', error: null,
-    jobs: [], learnMissing: null, toast: null, studioAsk: 0, editing: null,
+    jobs: [], learnMissing: null, toast: null, studioAsk: 0, editing: null, edited: null,
   };
   private jobTimer = 0;
   private seenDone = new Set<string>();
@@ -82,6 +84,7 @@ class Engine {
       // 她在对话里说「放这首」：第一次轮询只记下编号，不执行以前的
       for (const c of commands) {
         if (this.lastCommand >= 0 && c.type === 'play') { await this.refresh(); void this.playSong(c.songId); }
+        if (this.lastCommand >= 0 && c.type === 'edited') { this.reloadSong(c.songId); this.set({ edited: { songId: c.songId, at: Date.now() } }); }
         this.lastCommand = Math.max(this.lastCommand, c.id);
       }
       if (this.lastCommand < 0) this.lastCommand = 0;

@@ -16,21 +16,16 @@
  * 带子是她唱着不哑的音域（大肥鱼默认声音实测 A#3–E5，跟着移调走），出了带子的音符是红的。
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api, type EditData, type EditOp } from './api';
 import { getEngine } from './engine';
 import { Icon } from './icons';
+import { FPS, HER_HIGH, HER_LOW, compose, hzOf, marksOf, midiOf, noteName, notesOf, type Note, type Range } from '../pitch';
 
-const FPS = 100;               // 音高 10 ms 一帧
 const MIDI_LO = 36, MIDI_HI = 96; // 频谱图的纵轴范围（C2–C7），每半音 3 格
 const KEYW = 46;               // 左边琴键宽
 const RULER = 34;              // 上面时间尺 + 歌词
-const HER_LOW = 58, HER_HIGH = 76; // 她唱着不哑的音域（A#3–E5，prepare.py 的 HOARSE 表）
-const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-const midiOf = (hz: number) => 69 + 12 * Math.log2(hz / 440);
-const hzOf = (m: number) => 440 * 2 ** ((m - 69) / 12);
-const noteName = (m: number) => `${NAMES[((Math.round(m) % 12) + 12) % 12]}${Math.floor(Math.round(m) / 12) - 1}`;
 const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 const keyText = (k: number) => (k === 0 ? '原调' : k > 0 ? `升 ${k}` : `降 ${-k}`);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -49,84 +44,6 @@ function encode(a: Float32Array): string {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
-}
-
-interface Range { a: number; b: number }
-interface Note { a: number; b: number; midi: number }
-
-/** 剪刀和合并：只改「哪些帧算一个音」，不改音高 */
-type Mark = { kind: 'cut'; a: number } | { kind: 'join'; a: number; b: number };
-
-const marksOf = (ops: EditOp[]): Mark[] => ops.flatMap((o): Mark[] => (o.kind === 'cut' ? [{ kind: 'cut', a: o.a }] : o.kind === 'join' ? [{ kind: 'join', a: o.a, b: o.b }] : []));
-
-const medianMidi = (f: Float32Array, a: number, b: number) => {
-  const ms: number[] = [];
-  for (let i = a; i < b; i++) if (f[i] > 0) ms.push(midiOf(f[i]));
-  ms.sort((x, y) => x - y);
-  return ms.length ? ms[ms.length >> 1] : 0;
-};
-
-/** 先自动切（autoNotes），再按顺序做剪刀和合并。offset：f 是从整首第几帧开始的一段 */
-function notesOf(f: Float32Array, marks: Mark[] = [], offset = 0): Note[] {
-  let out = autoNotes(f);
-  for (const m of marks) {
-    if (m.kind === 'cut') {
-      const c = m.a - offset;
-      out = out.flatMap((n) => (c - n.a >= 2 && n.b - c >= 2
-        ? [{ a: n.a, b: c, midi: medianMidi(f, n.a, c) }, { a: c, b: n.b, midi: medianMidi(f, c, n.b) }]
-        : [n]));
-    } else {
-      const a = m.a - offset, b = m.b - offset;
-      const hit = out.filter((n) => n.a < b && n.b > a);
-      if (hit.length < 2) continue;
-      const lo = Math.min(...hit.map((n) => n.a)), hi = Math.max(...hit.map((n) => n.b));
-      out = [...out.filter((n) => !hit.includes(n)), { a: lo, b: hi, midi: medianMidi(f, lo, hi) }].sort((x, y) => x.a - y.a);
-    }
-  }
-  return out;
-}
-
-/** 连着唱、音高差不到 0.8 个半音的一串帧算一个音 */
-function autoNotes(f: Float32Array): Note[] {
-  const out: Note[] = [];
-  let a = -1;
-  const push = (b: number) => {
-    if (a >= 0 && b - a >= 4) {
-      const ms = Array.from(f.subarray(a, b)).map(midiOf).sort((x, y) => x - y);
-      out.push({ a, b, midi: ms[ms.length >> 1] });
-    }
-  };
-  for (let i = 0; i <= f.length; i++) {
-    const v = i < f.length && f[i] > 0;
-    if (!v) { push(i); a = -1; continue; }
-    if (a < 0) { a = i; continue; }
-    if (Math.abs(midiOf(f[i]) - midiOf(f[i - 1])) > 0.8) { push(i); a = i; }
-  }
-  return out;
-}
-
-/** 测到的 / 自动修过的 + 一条条改动 → 她要唱的音高 */
-function compose(raw: Float32Array, plan: Float32Array | null, ops: EditOp[]): Float32Array {
-  const f = Float32Array.from(plan ?? raw);
-  for (let k = 0; k < ops.length; k++) {
-    const op = ops[k];
-    if (op.kind === 'cut' || op.kind === 'join') continue;
-    const a = Math.max(0, op.a), b = Math.min(f.length, op.b);
-    if (op.kind === 'snap' || op.kind === 'tune') {
-      const center = op.kind === 'snap' ? 1 : op.center, flatten = op.kind === 'snap' ? 0 : op.flatten;
-      for (const n of notesOf(f.subarray(a, b), marksOf(ops.slice(0, k)), a)) { // 按用户剪过、并过的音来对准
-        const target = n.midi + (Math.round(n.midi) - n.midi) * center;
-        for (let i = a + n.a; i < a + n.b; i++) if (f[i] > 0) f[i] = hzOf(target + (midiOf(f[i]) - n.midi) * (1 - flatten));
-      }
-      continue;
-    }
-    for (let i = a; i < b; i++) {
-      if (op.kind === 'source') f[i] = op.source === 'raw' ? raw[i] : (plan ?? raw)[i];
-      else if (op.kind === 'draw') { const hz = op.hz[i - op.a]; if (f[i] > 0 && hz > 0) f[i] = hz; }
-      else if (f[i] > 0) f[i] *= 2 ** (op.semitones / 12);
-    }
-  }
-  return f;
 }
 
 type Mode = 'synth' | 'her' | 'orig' | 'mix';
@@ -327,7 +244,21 @@ export function Editor({ id, onClose }: Props) {
     return () => { alive = false; preview.current?.stop(); preview.current?.releaseTone(); void preview.current?.ctx.close(); };
   }, [id]);
 
+  const dirtyRef = useRef(false);
   const dirty = useMemo(() => key !== saved.key || JSON.stringify(ops) !== saved.ops, [ops, key, saved]);
+  dirtyRef.current = dirty;
+  // 大肥鱼在对话里改了这首：没有没保存的改动就直接刷新成她改完的；有的话提醒一下（保存会盖掉她的）
+  const edited = useSyncExternalStore(getEngine().subscribe, () => getEngine().state.edited);
+  useEffect(() => {
+    if (!edited || edited.songId !== id || !data) return;
+    if (dirtyRef.current) { setNote('大肥鱼刚改了这首；你这边还有没保存的改动，保存会盖掉她的'); return; }
+    api.edit(id).then((d) => {
+      setData({ ...d, savedAt: edited.at }); setOps(d.state.ops); setRedo([]); setKey(d.state.key);
+      setSaved({ ops: JSON.stringify(d.state.ops), key: d.state.key });
+      setNote('大肥鱼刚改了这首，已经换成她改完的');
+    }).catch(() => {});
+  }, [edited?.at]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const raw = useMemo(() => (data ? decode(data.raw) : null), [data]);
   const plan = useMemo(() => (data?.plan ? decode(data.plan) : null), [data]);
   // 对准 / 拉直 面板开着时：先按滑杆的值画出来、听，点「应用」才记成一步

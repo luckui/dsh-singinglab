@@ -42,7 +42,8 @@ import { Learner } from './learner';
 import type { RecipeChoice } from './recipe';
 import { loadCatalog } from './shelf';
 import { Studio } from './studio';
-import { runtime, setStarted } from './runtime';
+import { pushCommand, runtime, setStarted } from './runtime';
+import { compose } from './pitch';
 import { Library, validId } from './library';
 
 export const name = 'dsh-singinglab';
@@ -209,6 +210,26 @@ export function apply(ctx: HostContext): void {
     return { dir, edit: editDir(dir), rt: await studio!.editRuntime(dir) };
   };
   const f0In = (s: unknown) => (typeof s === 'string' && s.length < 4_000_000 ? s : null);
+
+  // 大肥鱼修音用：和修音页同一份数据、同一个常驻进程
+  runtime.pitch = {
+    async open(id) {
+      const { dir, edit } = await editable(id);
+      const [raw, plan, state, song] = await Promise.all([readNpy(join(edit, 'raw.npy')), readNpy(join(edit, 'plan.npy')), readEditState(dir), library.detail(id)]);
+      if (!raw || !song) throw new Error('这首的音高读不到');
+      return { song, raw, plan, state };
+    },
+    async save(id, ops, key) {
+      const { dir, edit, rt } = await editable(id);
+      const [raw, plan, state] = await Promise.all([readNpy(join(edit, 'raw.npy')), readNpy(join(edit, 'plan.npy')), readEditState(dir)]);
+      if (!raw) throw new Error('这首的音高读不到');
+      const k = Math.max(-24, Math.min(24, Math.round(key)));
+      await writeEditState(dir, { ...state, key: k, ops: ops.slice(0, 2000) });
+      const out = await worker.call(rt, { cmd: 'save', dir: edit, cfg: rt.cfg, f0: b64(compose(raw, plan, ops)), key: k });
+      pushCommand({ type: 'edited', songId: id });
+      return { sec: out.sec };
+    },
+  };
 
   route('/api/dsh-singinglab/edit', ['GET'], async (request) => {
     const id = idOf(request);

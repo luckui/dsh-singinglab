@@ -52,7 +52,7 @@ export const api = {
   editAudioUrl: (id: string, name: 'vocals' | 'accomp' | 'phrase', key: number) => `${BASE}/edit-audio?id=${encodeURIComponent(id)}&name=${name}&key=${key}`,
   editPhrase: (id: string, start: number, end: number, f0: string, key: number) => post<{ start: number; end: number; renderSec: number }>('edit-phrase', { id, start, end, f0, key }),
   editSave: (id: string, f0: string, key: number, ops: import('../editor').EditOp[]) => post<{ sec: number; editedAt: number }>('edit-save', { id, f0, key, ops }),
-  jobs: (after = 0) => get<{ jobs: Job[]; missing: string | null; commands: Array<{ id: number; type: 'play'; songId: string }> }>(`jobs?after=${after}`),
+  jobs: (after = 0) => get<{ jobs: Job[]; missing: string | null; commands: Array<{ id: number; type: 'play' | 'edited'; songId: string }> }>(`jobs?after=${after}`),
   cancel: (id: string) => post<{ ok: boolean }>('cancel', { id }),
   imgUrl: (u: string) => `${BASE}/img?u=${encodeURIComponent(u)}`,
   assetUrl: (name: string) => `${BASE}/asset?name=${encodeURIComponent(name)}`,

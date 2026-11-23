@@ -8,23 +8,31 @@
  *   singinglab_learn           学一首（B 站视频），在后台学；学会了播放器会自动放，
  *                              学完（或没学成）往让学的那个会话里补一条消息叫醒她（像后台任务的完成通知）
  *   singinglab_play            在播放器里放歌库里的一首
+ *   singinglab_pitch           修音：看一首歌她要唱的音高（每句一行；带 start/end 就是每个音一行）
+ *   singinglab_pitch_edit      修音：改音高（升降、八度、对准、拉直、恢复）、整首移调；改完重新唱整首（约 20 秒）
+ *   singinglab_pitch_undo      修音：撤销最近几步
+ * 修音怎么判断、怎么改，写在技能 singinglab-pitch 里（用到才读）；改动和修音页是同一份，修音页里能看到、能撤销。
  */
 
 import { randomUUID } from 'node:crypto';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { guessTitle, parseVideoRef } from './bili';
 import type { Job } from './learner';
+import { detail, overview, toOp, type PitchChange } from './pitchdesk';
 import { pushCommand, runtime, started } from './runtime';
+import { PITCH_SKILL } from './pitchskill';
 
 export const name = 'dsh-singinglab-agent';
 export const inject = ['tools'];
 
 interface LiveAgent { followup(message: unknown): void | Promise<void> }
 
+interface SkillRegistry { register(skill: { name: string; description: string; whenToUse?: string; source: string; content: string }): () => void }
+
 interface AgentContext {
   effect(effect: () => () => void, label?: string): unknown;
   tools: { register(tool: unknown): () => void };
-  get?(name: 'agents'): { get?(id: string): LiveAgent | undefined } | undefined;
+  get?(name: string): any;
 }
 
 const text = { schema: { type: 'string' as const }, render: (_a: unknown, value: string) => [{ type: 'text' as const, text: value }] };
@@ -40,7 +48,7 @@ async function rt() {
 /** 学完一首：往让学的那个会话里补一条消息并叫醒她。会话不在了（关了、DSH 重启过）就不说，她下次查状态能看到 */
 function tellSession(ctx: AgentContext, job: Job): void {
   if (!job.session || job.reason === '取消了') return;
-  const agents = ctx.get?.('agents');
+  const agents = ctx.get?.('agents') as { get?(id: string): LiveAgent | undefined } | undefined;
   const agent = agents?.get?.(job.session);
   if (!agent?.followup) {
     console.warn(`[dsh-singinglab] 学完没能告诉会话 ${job.session}：${agents ? '会话不在线' : '拿不到 agents 服务'}`);
@@ -160,15 +168,16 @@ export function apply(ctx: AgentContext): void {
       title: { type: 'string', required: true, description: '歌名（干净的歌名，不要「MV」「高音质」这些）' },
       artist: { type: 'string', description: '原唱歌手（知道就填，对歌词更准）' },
       page: { type: 'number', description: '分 P（默认第 1 个）' },
+      relearn: { type: 'boolean', description: '已经会唱也重学一遍（以前学的歌没留修音要用的分轨，要修音得先重学；旧的那版学成之前一直在）' },
     },
     output: text,
-    async execute(args: { bvid?: string; title?: string; artist?: string; page?: number }, exec?: { agent?: { id: string } }) {
+    async execute(args: { bvid?: string; title?: string; artist?: string; page?: number; relearn?: boolean }, exec?: { agent?: { id: string } }) {
       const { studio, learner } = await rt();
       const ref = parseVideoRef(String(args.bvid ?? ''));
       if (!ref) return '没认出 BV 号。';
       const lack = await studio.check();
       if (lack) return `${lack}\n可以先调 singinglab_prepare。`;
-      const job = learner.learn({ bvid: ref.bvid, page: args.page ?? ref.page, title: String(args.title ?? ''), artist: args.artist, autoplay: true, ...(exec?.agent?.id ? { session: exec.agent.id } : {}) });
+      const job = learner.learn({ bvid: ref.bvid, page: args.page ?? ref.page, title: String(args.title ?? ''), artist: args.artist, autoplay: !args.relearn, ...(args.relearn ? { relearn: true } : {}), ...(exec?.agent?.id ? { session: exec.agent.id } : {}) });
       return job.state === 'queued' && learner.jobs.some((j) => j.state === 'running' && j.id !== job.id)
         ? `排上了《${job.title}》，前面还有歌在学。在后台学，学会了会自动放，学完会告诉你，不用等。`
         : `开始学《${job.title}》，在后台学，大约 3 分钟，学会了会自动放，学完会告诉你，不用等。`;
@@ -190,4 +199,110 @@ export function apply(ctx: AgentContext): void {
       return `在放《${hit.title}》。`;
     },
   }), 'singinglab_play');
+
+  // ── 修音 ──
+  const findSong = async (want: string) => {
+    const { library } = await rt();
+    const w = want.trim();
+    const songs = await library.list();
+    return songs.find((s) => s.id === w) ?? songs.find((s) => s.title === w) ?? songs.find((s) => s.title.includes(w) || w.includes(s.title)) ?? null;
+  };
+  const pitch = async (want: string) => {
+    await runtime.ready;
+    if (!runtime.pitch) throw new Error('唱歌插件还没启动好');
+    const hit = await findSong(want);
+    if (!hit) throw new Error(`歌库里没有「${want}」`);
+    return { id: hit.id, doc: await runtime.pitch.open(hit.id), svc: runtime.pitch };
+  };
+  const songParam = { type: 'string' as const, required: true as const, description: '歌库 id 或歌名' };
+
+  reg(defineTool({
+    name: 'singinglab_pitch',
+    description: '修音：看一首歌她要唱的音高。不带时间：整首每句歌词一行——时间、唱到哪些音（她实际唱的音，算上了移调）、沙不沙（按她的声音实测）、出没出音域、自动修正改过哪里、改过哪里、这句是第几次出现、在响的段（多半是副歌）还是轻的段。带 start/end（秒）：这一段每个音一行，和原来测到的差多少、比前一个音跳了多少。用户说哪里唱得哑、跑调、高音破了、某句不对，先用这个找到是哪几个音。怎么判断、怎么改见技能 singinglab-pitch。',
+    parameters: {
+      song: songParam,
+      start: { type: 'number', description: '从第几秒（看一段时带上）' },
+      end: { type: 'number', description: '到第几秒' },
+    },
+    output: text,
+    async execute(args: { song?: string; start?: number; end?: number }) {
+      try {
+        const { doc } = await pitch(String(args.song ?? ''));
+        return typeof args.start === 'number' && typeof args.end === 'number' && args.end > args.start ? detail(doc, args.start, args.end) : overview(doc);
+      } catch (err) {
+        return (err as Error).message;
+      }
+    },
+  }), 'singinglab_pitch');
+
+  reg(defineTool({
+    name: 'singinglab_pitch_edit',
+    description: '修音：改一首歌她要唱的音高，改完整首重新唱、重新混音（约 20 秒），播放器里换成新的；修音页开着也会刷新。一次可以改好几处。改法（start/end 是秒）：shift 升降 semitones 个半音（12 = 一个八度，可以带小数）；snap 每个音对准最近的半音（颤音留着）；tune 对准 center%（0–100）、把音里的起伏拉直 flatten%（0–100，太多会像机器）；reset 恢复成自动修正的结果；use_measured 用原来测到的音（不要自动修正）。key 是整首升降几个半音（伴奏跟着移），不改就不填。改动和修音页是同一份记录，用户在修音页里能看到、能撤销。',
+    parameters: {
+      song: songParam,
+      changes: {
+        type: 'array',
+        description: '这一次的改动，按顺序做',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            start: { type: 'number', required: true, description: '从第几秒' },
+            end: { type: 'number', required: true, description: '到第几秒' },
+            action: { type: 'string', required: true, enum: ['shift', 'snap', 'tune', 'reset', 'use_measured'], description: '怎么改' },
+            semitones: { type: 'number', description: 'shift 用：升几个半音（负数是降）' },
+            center: { type: 'number', description: 'tune 用：往半音对准多少（0–100，默认 100）' },
+            flatten: { type: 'number', description: 'tune 用：起伏拉直多少（0–100，默认 0）' },
+          },
+        },
+      },
+      key: { type: 'number', description: '整首升降几个半音（她唱的调）；不改就不填' },
+    },
+    output: text,
+    async execute(args: { song?: string; changes?: PitchChange[]; key?: number }) {
+      try {
+        const { id, doc, svc } = await pitch(String(args.song ?? ''));
+        const changes = Array.isArray(args.changes) ? args.changes : [];
+        if (!changes.length && typeof args.key !== 'number') return '没说要改什么。';
+        const added = changes.map((c) => toOp(c, doc.raw.length));
+        const key = typeof args.key === 'number' ? Math.round(args.key) : doc.state.key;
+        const { sec } = await svc.save(id, [...doc.state.ops, ...added], key);
+        const after = await svc.open(id);
+        const parts = changes.map((c) => detail(after, Math.max(0, c.start - 0.3), c.end + 0.3).split('\n').slice(0, -1).join('\n'));
+        return [
+          `改好了，整首重新唱完（${sec} 秒），播放器里已经是新的。${typeof args.key === 'number' && key !== doc.state.key ? `调从${doc.state.key >= 0 ? '升' : '降'} ${Math.abs(doc.state.key)} 换成${key >= 0 ? '升' : '降'} ${Math.abs(key)}。` : ''}`,
+          ...parts,
+          `这首现在一共 ${after.state.ops.length} 步改动；singinglab_pitch_undo 能撤销，修音页里也能看、能撤销。`,
+          `歌库 id：${id}`,
+        ].join('\n');
+      } catch (err) {
+        return `没改成：${(err as Error).message}`;
+      }
+    },
+  }), 'singinglab_pitch_edit');
+
+  reg(defineTool({
+    name: 'singinglab_pitch_undo',
+    description: '修音：撤销一首歌最近几步改动（不管是用户在修音页改的还是你改的），撤完重新唱整首（约 20 秒）。',
+    parameters: { song: songParam, steps: { type: 'number', description: '撤几步（默认 1）' } },
+    output: text,
+    async execute(args: { song?: string; steps?: number }) {
+      try {
+        const { id, doc, svc } = await pitch(String(args.song ?? ''));
+        const n = Math.max(1, Math.min(doc.state.ops.length, Math.round(args.steps ?? 1)));
+        if (!doc.state.ops.length) return '这首没有改动可以撤销。';
+        const { sec } = await svc.save(id, doc.state.ops.slice(0, -n), doc.state.key);
+        return `撤销了 ${n} 步，重新唱完（${sec} 秒）。还剩 ${doc.state.ops.length - n} 步改动。\n歌库 id：${id}`;
+      } catch (err) {
+        return `没撤成：${(err as Error).message}`;
+      }
+    },
+  }), 'singinglab_pitch_undo');
+
+  // 修音的经验：写成一份技能，用到才读，不占平时的提示词
+  ctx.effect(() => {
+    const skills = ctx.get?.('skills') as SkillRegistry | undefined;
+    if (!skills?.register) return () => {};
+    return skills.register(PITCH_SKILL);
+  }, 'singinglab: pitch skill');
 }
