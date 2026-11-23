@@ -455,7 +455,7 @@ export const CSS = `
 .sl-ed-seg { display: flex; padding: 3px; gap: 2px; border-radius: 11px; background: rgba(255,255,255,.05); }
 .sl-ed-seg button { height: 28px; padding: 0 11px; border-radius: 8px; font-size: 12.5px; color: #aebbd3; }
 .sl-ed-seg button.is-on { background: rgba(127,190,255,.18); color: #fff; }
-.sl-ed-hint { font-size: 12.5px; color: #8ea0bf; margin-left: auto; }
+.sl-ed-hint { flex: 1 1 180px; min-width: 0; font-size: 12.5px; color: #8ea0bf; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* 提示长短变了也不让工具栏重新换行（画布不跳） */
 .sl-ed-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; margin: 0 16px; }
 .sl-ed-roll { position: relative; flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
 .sl-ed-overview { height: 40px; border-radius: 9px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); cursor: pointer; }

@@ -117,7 +117,11 @@ export type EditOp =
   /** 对准：这一段里每个音整体挪到最近的半音（颤音、滑音都留着） */
   | { a: number; b: number; kind: 'snap' }
   /** 像 Melodyne 的音高校正：每个音的中心往最近的半音挪 center（0–1），音里的起伏（颤音、漂移）压平 flatten（0–1） */
-  | { a: number; b: number; kind: 'tune'; center: number; flatten: number };
+  | { a: number; b: number; kind: 'tune'; center: number; flatten: number }
+  /** 剪刀：在第 a 帧把音符剪成两个（b = a + 1）。不改音高，只改「哪些帧算一个音」 */
+  | { a: number; b: number; kind: 'cut' }
+  /** 合并：这一段里碰到的音符并成一个（拖、对准都当一个音） */
+  | { a: number; b: number; kind: 'join' };
 
 export const editDir = (songDir: string) => join(songDir, 'edit');
 

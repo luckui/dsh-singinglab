@@ -7,8 +7,9 @@
  *   改    拖音符 按半音（拖的时候就响这个音）· Alt+拖 不吸附 · ↑↓ 半音 · Shift+↑↓ 八度 · 双击音符 对准半音
  *         画笔（B）：按住画音高线 · Shift 画直线 · 右键拖 擦掉（恢复成自动修的）
  *         对准 / 拉直：选一段，中心往半音挪多少、音里的起伏压平多少，先听再「应用」
+ *         剪刀（K）：点音符剪成两个 · 双击剪口合回去 · 选几个音符按 J「合并」成一个（拖、对准都当一个音）
  *         Delete 选中的恢复成自动修的 · Ctrl+Z 撤销 · Ctrl+Shift+Z / Ctrl+Y 重做
- *   听    空格 播放 / 停（停了播放头回到开始的地方）· 点时间尺 放播放头
+ *   听    空格 播放 / 停（停了播放头回到开始的地方）· L 循环（边循环边改，下一圈就是改过的）· 点时间尺 放播放头
  *         乐器音（长笛，马上就有）/ 她的声音（只渲染这一段，不到一秒）/ 原唱 / 歌库里的版本
  *
  * 白线是她要唱的音高线，音符块对齐半音格；橙色虚线是原来测到的音（和现在不一样的地方才画）；
@@ -53,8 +54,40 @@ function encode(a: Float32Array): string {
 interface Range { a: number; b: number }
 interface Note { a: number; b: number; midi: number }
 
+/** 剪刀和合并：只改「哪些帧算一个音」，不改音高 */
+type Mark = { kind: 'cut'; a: number } | { kind: 'join'; a: number; b: number };
+
+const marksOf = (ops: EditOp[]): Mark[] => ops.flatMap((o): Mark[] => (o.kind === 'cut' ? [{ kind: 'cut', a: o.a }] : o.kind === 'join' ? [{ kind: 'join', a: o.a, b: o.b }] : []));
+
+const medianMidi = (f: Float32Array, a: number, b: number) => {
+  const ms: number[] = [];
+  for (let i = a; i < b; i++) if (f[i] > 0) ms.push(midiOf(f[i]));
+  ms.sort((x, y) => x - y);
+  return ms.length ? ms[ms.length >> 1] : 0;
+};
+
+/** 先自动切（autoNotes），再按顺序做剪刀和合并。offset：f 是从整首第几帧开始的一段 */
+function notesOf(f: Float32Array, marks: Mark[] = [], offset = 0): Note[] {
+  let out = autoNotes(f);
+  for (const m of marks) {
+    if (m.kind === 'cut') {
+      const c = m.a - offset;
+      out = out.flatMap((n) => (c - n.a >= 2 && n.b - c >= 2
+        ? [{ a: n.a, b: c, midi: medianMidi(f, n.a, c) }, { a: c, b: n.b, midi: medianMidi(f, c, n.b) }]
+        : [n]));
+    } else {
+      const a = m.a - offset, b = m.b - offset;
+      const hit = out.filter((n) => n.a < b && n.b > a);
+      if (hit.length < 2) continue;
+      const lo = Math.min(...hit.map((n) => n.a)), hi = Math.max(...hit.map((n) => n.b));
+      out = [...out.filter((n) => !hit.includes(n)), { a: lo, b: hi, midi: medianMidi(f, lo, hi) }].sort((x, y) => x.a - y.a);
+    }
+  }
+  return out;
+}
+
 /** 连着唱、音高差不到 0.8 个半音的一串帧算一个音 */
-function notesOf(f: Float32Array): Note[] {
+function autoNotes(f: Float32Array): Note[] {
   const out: Note[] = [];
   let a = -1;
   const push = (b: number) => {
@@ -75,11 +108,13 @@ function notesOf(f: Float32Array): Note[] {
 /** 测到的 / 自动修过的 + 一条条改动 → 她要唱的音高 */
 function compose(raw: Float32Array, plan: Float32Array | null, ops: EditOp[]): Float32Array {
   const f = Float32Array.from(plan ?? raw);
-  for (const op of ops) {
+  for (let k = 0; k < ops.length; k++) {
+    const op = ops[k];
+    if (op.kind === 'cut' || op.kind === 'join') continue;
     const a = Math.max(0, op.a), b = Math.min(f.length, op.b);
     if (op.kind === 'snap' || op.kind === 'tune') {
       const center = op.kind === 'snap' ? 1 : op.center, flatten = op.kind === 'snap' ? 0 : op.flatten;
-      for (const n of notesOf(f.subarray(a, b))) {
+      for (const n of notesOf(f.subarray(a, b), marksOf(ops.slice(0, k)), a)) { // 按用户剪过、并过的音来对准
         const target = n.midi + (Math.round(n.midi) - n.midi) * center;
         for (let i = a + n.a; i < a + n.b; i++) if (f[i] > 0) f[i] = hzOf(target + (midiOf(f[i]) - n.midi) * (1 - flatten));
       }
@@ -95,7 +130,7 @@ function compose(raw: Float32Array, plan: Float32Array | null, ops: EditOp[]): F
 }
 
 type Mode = 'synth' | 'her' | 'orig' | 'mix';
-type Tool = 'select' | 'draw';
+type Tool = 'select' | 'draw' | 'cut';
 
 const PARTIALS = [0, 1, 0.32, 0.1, 0.04]; // 长笛一样：基音为主，一点点二三次谐波
 
@@ -109,6 +144,19 @@ class Preview {
   offset = 0;
   end = 0;
   playing: Mode | null = null;
+  /** 一段放完了（音频节点自己报的，切到后台也照样报）：Editor 决定循环还是停 */
+  onEnd: (() => void) | null = null;
+  private run = 0;
+
+  /** 这一段的「主」节点放完时报一次；中途被 stop() 打断的不报 */
+  private watch(node: AudioScheduledSourceNode): void {
+    const run = ++this.run;
+    node.onended = () => {
+      if (run !== this.run || !this.playing) return;
+      this.stop();
+      this.onEnd?.();
+    };
+  }
 
   private wave(): PeriodicWave {
     return this.ctx.createPeriodicWave(new Float32Array(PARTIALS), new Float32Array(PARTIALS.length));
@@ -125,6 +173,7 @@ class Preview {
   }
 
   stop(): void {
+    this.run++;
     for (const n of this.nodes) { try { n.stop(); } catch { /* 已经停了 */ } }
     this.nodes = [];
     this.playing = null;
@@ -146,7 +195,9 @@ class Preview {
     this.startedAt = at;
     this.offset = from;
     this.end = Math.min(to ?? Infinity, bufStart + buf.duration);
+    if (to !== undefined && to < bufStart + buf.duration) src.stop(at + (to - from));
     this.playing = mode;
+    if (mode !== 'synth') this.watch(src); // 乐器音的伴奏只是垫底，结束看长笛那一路
   }
 
   /** 长笛一样的音色按音高线吹出来；acc 是移好调的伴奏 */
@@ -173,12 +224,13 @@ class Preview {
     }
     g.gain.setTargetAtTime(0, at + (b - a) / FPS, 0.02);
     osc.start(at);
-    osc.stop(at + (b - a) / FPS + 0.2);
+    osc.stop(at + (b - a) / FPS + 0.05);
     this.nodes.push(osc);
     this.startedAt = at;
     this.offset = from;
     this.end = to;
     this.playing = 'synth';
+    this.watch(osc);
   }
 
   /** 拖音符时一直响着这个音，跟着手走 */
@@ -218,6 +270,9 @@ const SHORTCUTS: Array<[string, string]> = [
   ['F', '缩放到选中的一段（没选中就整首）'],
   ['V / 1', '选择工具'],
   ['B / 2', '画笔：画音高线（Shift 直线，右键拖擦掉）'],
+  ['K / 3', '剪刀：点音符剪成两个，双击剪口合回去'],
+  ['J', '选中的几个音符合并成一个'],
+  ['L', '循环播放（边循环边改，下一圈就是改过的）'],
   ['点 / Shift+点 / 拖空白', '选音符 / 加选 / 框一段'],
   [`${MOD}+A / Esc`, '全选 / 取消选择'],
   ['拖音符 / Alt+拖', '按半音改 / 不吸附'],
@@ -247,6 +302,13 @@ export function Editor({ id, onClose }: Props) {
   /** 上次保存（或打开时）的状态：现在的改动和调跟它一样就算没改 */
   const [saved, setSaved] = useState<{ ops: string; key: number }>({ ops: '[]', key: 0 });
   const [tool, setTool] = useState<Tool>('select');
+  const [loop, setLoop] = useState(false);
+  const loopRef = useRef(false);
+  loopRef.current = loop;
+  /** 上一次放的是哪一段（循环、改完重听都用它） */
+  const lastPlay = useRef<{ from: number; to?: number } | null>(null);
+  /** 她的声音：同一段、同一条音高线、同一个调就不再渲染（循环时只在改过之后重新唱） */
+  const phraseCache = useRef<{ f0: Float32Array; key: number; a: number; b: number; buf: AudioBuffer; start: number } | null>(null);
   const [tune, setTune] = useState<{ center: number; flatten: number } | null>(null);
   const [help, setHelp] = useState(false);
   const preview = useRef<Preview | null>(null);
@@ -271,6 +333,10 @@ export function Editor({ id, onClose }: Props) {
   // 对准 / 拉直 面板开着时：先按滑杆的值画出来、听，点「应用」才记成一步
   const pending: EditOp | null = tune && sel ? { ...sel, kind: 'tune', center: tune.center / 100, flatten: tune.flatten / 100 } : null;
   const f0 = useMemo(() => (raw ? compose(raw, plan, pending ? [...ops, pending] : ops) : null), [raw, plan, ops, pending?.a, pending?.b, tune?.center, tune?.flatten]); // eslint-disable-line react-hooks/exhaustive-deps
+  const notes = useMemo(() => (f0 ? notesOf(f0, marksOf(ops)) : []), [f0, ops]);
+  const selNotes = useMemo(() => (sel ? notes.filter((n) => n.a < sel.b && n.b > sel.a) : []), [notes, sel]);
+  // 调试用：控制台里 __singinglabEditor.notes / .ops 能直接看
+  (window as unknown as { __singinglabEditor: unknown }).__singinglabEditor = { notes, ops, sel, playing, loop };
 
   const apply = useCallback((op: EditOp) => { setOps((o) => [...o, op]); setRedo([]); }, []);
   const undo = useCallback(() => {
@@ -302,6 +368,7 @@ export function Editor({ id, onClose }: Props) {
     setMode(m);
     playFrom.current = from;
     head.current = from;
+    lastPlay.current = { from, to };
     const end = to ?? data.durationSec;
     try {
       if (m === 'synth') {
@@ -313,13 +380,18 @@ export function Editor({ id, onClose }: Props) {
         // 给了终点就渲染这一段（选中的、刚改的）；没给就从这里往后 8 秒
         const a = to !== undefined ? from : Math.max(0, from - 0.5);
         const b = to !== undefined ? to : Math.min(data.durationSec, from + 8);
-        setBusy('她在唱这一段…');
-        const out = await api.editPhrase(id, a, b, encode(f0), key);
-        const buf = await p.buffer(`${api.editAudioUrl(id, 'phrase', key)}&t=${Date.now()}`);
-        setBusy(null);
-        setNote(`这一段渲染用了 ${out.renderSec} 秒`);
-        playFrom.current = out.start;
-        p.playBuffer(buf, out.start, out.start, 'her');
+        let hit = phraseCache.current;
+        if (!hit || hit.f0 !== f0 || hit.key !== key || hit.a !== a || hit.b !== b) {
+          setBusy('她在唱这一段…');
+          const out = await api.editPhrase(id, a, b, encode(f0), key);
+          const buf = await p.buffer(`${api.editAudioUrl(id, 'phrase', key)}&t=${Date.now()}`);
+          setBusy(null);
+          setNote(`这一段渲染用了 ${out.renderSec} 秒`);
+          hit = { f0, key, a, b, buf, start: out.start };
+          phraseCache.current = hit;
+        }
+        playFrom.current = hit.start;
+        p.playBuffer(hit.buf, hit.start, hit.start, 'her');
       } else if (m === 'orig') {
         setBusy('取原唱…');
         const buf = await p.buffer(api.editAudioUrl(id, 'vocals', 0));
@@ -344,6 +416,18 @@ export function Editor({ id, onClose }: Props) {
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const playSoon = useCallback((from: number, to?: number) => { setTimeout(() => void playRef.current(modeRef.current, from, to), 0); }, []);
+  /** 放完了（音频自己报的）：开着循环就再放一遍同一段（用最新的音高线，改过的下一圈就听得到）；不然停下、播放头回到开始 */
+  useEffect(() => {
+    const p = preview.current;
+    if (!p) return;
+    p.onEnd = () => {
+      head.current = playFrom.current;
+      const last = lastPlay.current;
+      if (loopRef.current && last) void playRef.current(modeRef.current, last.from, last.to);
+      else setPlaying(false);
+    };
+    return () => { p.onEnd = null; };
+  }, [data]);
   const toggle = useCallback(() => {
     if (preview.current?.playing) stop();
     else void playRef.current(modeRef.current, sel ? sel.a / FPS : head.current, sel ? sel.b / FPS : undefined);
@@ -351,6 +435,7 @@ export function Editor({ id, onClose }: Props) {
 
   const shiftSel = useCallback((n: number) => { if (sel) apply({ ...sel, kind: 'shift', semitones: n }); }, [sel, apply]);
   const resetSel = useCallback(() => { if (sel) apply({ ...sel, kind: 'source', source: 'plan' }); }, [sel, apply]);
+  const joinSel = useCallback(() => { if (sel && selNotes.length >= 2) apply({ ...sel, kind: 'join' }); }, [sel, selNotes, apply]);
 
   // ── 快捷键 ──
   useEffect(() => {
@@ -370,6 +455,9 @@ export function Editor({ id, onClose }: Props) {
       else if (e.key === 'Delete' || e.key === 'Backspace') resetSel();
       else if (!mod && (k === 'v' || k === '1')) setTool('select');
       else if (!mod && (k === 'b' || k === '2')) setTool('draw');
+      else if (!mod && (k === 'k' || k === '3')) setTool('cut');
+      else if (!mod && k === 'j') joinSel();
+      else if (!mod && k === 'l') setLoop((l) => !l);
       else if (!mod && k === 'f') roll.current?.fit(sel);
       else if (e.key === '?' || (e.shiftKey && e.code === 'Slash')) setHelp((h) => !h);
       else used = false;
@@ -377,7 +465,7 @@ export function Editor({ id, onClose }: Props) {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [data, sel, help, tune, toggle, undo, redoOne, shiftSel, resetSel]);
+  }, [data, sel, help, tune, toggle, undo, redoOne, shiftSel, resetSel, joinSel]);
 
   const close = () => {
     if (dirty && !window.confirm('改动还没保存，确定离开吗？')) return;
@@ -413,7 +501,9 @@ export function Editor({ id, onClose }: Props) {
   };
 
   const title = data ? `${data.title}${data.artist ? ` · ${data.artist}` : ''}` : '';
-  const hint = tool === 'draw' ? '按住画音高线 · Shift 画直线 · 右键拖擦掉' : '拖音符改音高 · 拖空白处框一段 · 空格试听 · ? 看快捷键';
+  const hint = tool === 'draw' ? '按住画音高线 · Shift 画直线 · 右键拖擦掉'
+    : tool === 'cut' ? '点音符剪成两个 · 双击剪口合回去'
+      : '拖音符改音高 · 拖空白处框一段 · 空格试听 · ? 看快捷键';
 
   return (
     <div className="sl-editor" role="dialog" aria-label="修音">
@@ -443,6 +533,7 @@ export function Editor({ id, onClose }: Props) {
             <div className="sl-ed-seg" title="工具">
               <button className={tool === 'select' ? 'is-on' : ''} onClick={() => setTool('select')} title="选择（V）">选择</button>
               <button className={tool === 'draw' ? 'is-on' : ''} onClick={() => setTool('draw')} title="画笔：画音高线（B）">画笔</button>
+              <button className={tool === 'cut' ? 'is-on' : ''} onClick={() => setTool('cut')} title="剪刀：点音符剪成两个，双击剪口合回去（K）">剪刀</button>
             </div>
             <div className="sl-ed-seg" title="底下的频谱图：哪一轨、多亮">
               {data.layers.map((l) => (
@@ -451,6 +542,7 @@ export function Editor({ id, onClose }: Props) {
               <button onClick={() => setGlow((g) => (g === 'strong' ? 'weak' : g === 'weak' ? 'off' : 'strong'))} title="频谱亮度">{glow === 'strong' ? '亮' : glow === 'weak' ? '暗' : '关'}</button>
             </div>
             <div className="sl-ed-seg" title="试听（空格：播放 / 停）">
+              <button className={loop ? 'is-on' : ''} onClick={() => setLoop((l) => !l)} title="循环播放选中的一段（L）：边循环边改，下一圈就是改过的"><Icon name="repeat" size={15} /></button>
               {(['synth', 'her', 'orig', 'mix'] as Mode[]).map((m) => (
                 <button key={m} className={mode === m ? 'is-on' : ''} onClick={() => setMode(m)}>{m === 'synth' ? '乐器音' : m === 'her' ? '她的声音' : m === 'orig' ? '原唱' : '歌库里的版本'}</button>
               ))}
@@ -465,7 +557,7 @@ export function Editor({ id, onClose }: Props) {
           </div>
           <Roll
             data={data} raw={raw} f0={f0} keyShift={key} layer={layer} glow={glow} sel={sel} onSel={(r) => { setSel(r); if (!r) setTune(null); }}
-            tool={tool} onOp={apply} playSoon={playSoon} preview={preview} playing={playing} onPlaying={setPlaying}
+            tool={tool} onOp={apply} playSoon={playSoon} preview={preview} playing={playing} onPlaying={setPlaying} notes={notes}
             head={head} playFrom={playFrom} apiRef={roll} id={id}
           />
           <footer className="sl-ed-foot">
@@ -485,6 +577,7 @@ export function Editor({ id, onClose }: Props) {
                 <button disabled={!sel} onClick={() => shiftSel(1)} title="↑">升半音</button>
                 <button disabled={!sel} onClick={() => shiftSel(-1)} title="↓">降半音</button>
                 <button disabled={!sel} onClick={() => setTune({ center: 100, flatten: 0 })} title="中心对准半音、压平起伏，像 Melodyne 的音高校正（双击音符 = 对准这个音）">对准 / 拉直…</button>
+                <button disabled={selNotes.length < 2} onClick={joinSel} title="选中的几个音符并成一个，拖、对准都当一个音（J）">合并</button>
                 <button disabled={!sel} onClick={resetSel} title="恢复成自动修的（Delete）">恢复自动</button>
                 <button disabled={!sel} onClick={() => sel && apply({ ...sel, kind: 'source', source: 'raw' })} title="这一段用原来测到的音（不要自动修）">用测到的</button>
                 <span className="sl-ed-gap" />
@@ -512,6 +605,7 @@ interface RollProps {
   layer: 'vocals' | 'dry' | 'back'; glow: 'strong' | 'weak' | 'off';
   sel: Range | null; onSel: (s: Range | null) => void;
   tool: Tool; onOp: (op: EditOp) => void; playSoon: (from: number, to?: number) => void;
+  notes: Note[];
   preview: React.MutableRefObject<Preview | null>; playing: boolean; onPlaying: (v: boolean) => void;
   head: React.MutableRefObject<number>; playFrom: React.MutableRefObject<number>;
   apiRef: React.MutableRefObject<RollApi | null>;
@@ -528,7 +622,7 @@ type Drag =
 const overlaps = (n: Range, r: Range | null) => !!r && n.a < r.b && n.b > r.a;
 
 function Roll(props: RollProps) {
-  const { id, data, raw, f0, keyShift, layer, glow, sel, onSel, tool, onOp, playSoon, preview, playing, onPlaying, head, playFrom, apiRef } = props;
+  const { id, data, raw, f0, keyShift, layer, glow, sel, onSel, tool, onOp, playSoon, preview, playing, onPlaying, head, playFrom, apiRef, notes } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 900, h: 480 });
@@ -538,11 +632,11 @@ function Roll(props: RollProps) {
   const drag = useRef<Drag | null>(null);
   const hover = useRef<{ x: number; y: number; note: Note | null } | null>(null);
   const spec = useRef<HTMLImageElement | null>(null);
-  const notes = useMemo(() => notesOf(f0), [f0]);
   const dur = data.durationSec;
 
   const v = view.current;
   const W = size.w, H = size.h;
+  (window as unknown as { __singinglabRoll: unknown }).__singinglabRoll = { view: v, keyw: KEYW, ruler: RULER }; // 调试用
   const span = () => (W - KEYW) / v.pps;
   const rows = () => (H - RULER) / v.spx;
   const tidy = () => {
@@ -613,7 +707,7 @@ function Roll(props: RollProps) {
       const p = preview.current;
       if (!p?.playing) { onPlaying(false); redraw(); return; }
       head.current = p.time;
-      if (p.time >= p.end) { p.stop(); head.current = playFrom.current; onPlaying(false); redraw(); return; }
+      // 放完由音频节点自己报（Preview.onEnd），这里只画播放头
       if (!drag.current && (head.current > v.t0 + span() * 0.92 || head.current < v.t0)) { v.t0 = head.current - span() * 0.1; tidy(); }
       redraw();
       raf = requestAnimationFrame(loop);
@@ -739,6 +833,18 @@ function Roll(props: RollProps) {
       pen = true;
     }
     g.stroke();
+    // 剪刀：音符之间挨着的地方（剪口）画一道细缝；指着音符时画出要剪的位置
+    g.fillStyle = '#0c1222';
+    for (let k = 1; k < notes.length; k++) {
+      const n = notes[k], prev = notes[k - 1];
+      if (prev.b !== n.a || n.a / FPS < v.t0 || n.a / FPS > t1) continue;
+      g.fillRect(x(n.a / FPS) - 1, y(Math.round(n.midi)) - v.spx * 0.5, 2, v.spx);
+    }
+    if (tool === 'cut' && hover.current?.note && !d0) {
+      const cx = x(Math.round(tAt(hover.current.x) * FPS) / FPS), n = hover.current.note;
+      g.strokeStyle = '#ffd866'; g.lineWidth = 1.5; g.setLineDash([3, 2]);
+      g.beginPath(); g.moveTo(cx, y(Math.round(n.midi)) - v.spx * 1.2); g.lineTo(cx, y(Math.round(n.midi)) + v.spx * 1.2); g.stroke(); g.setLineDash([]);
+    }
     // 正在画的那一笔：黄色
     if (d0?.kind === 'draw' && d0.hz.size) {
       g.strokeStyle = '#ffd866'; g.lineWidth = 2.2; g.beginPath();
@@ -812,6 +918,11 @@ function Roll(props: RollProps) {
     if (px < KEYW) return;
     if (py < RULER) { head.current = clamp(tAt(px), 0, dur); drag.current = { kind: 'scrub' }; redraw(); return; }
     const i = clamp(Math.round(tAt(px) * FPS), 0, f0.length - 1);
+    if (tool === 'cut') {
+      const n = hitNote(px, py);
+      if (n && e.button === 0 && i - n.a >= 2 && n.b - i >= 2) { onOp({ a: i, b: i + 1, kind: 'cut' }); onSel(null); }
+      return;
+    }
     if (tool === 'draw') {
       if (e.button === 2) { drag.current = { kind: 'erase', a: i, b: i }; redraw(); return; }
       const m = mAt(py);
@@ -841,7 +952,7 @@ function Roll(props: RollProps) {
     const d = drag.current;
     const c = canvas.current!;
     if (!d) {
-      c.style.cursor = px < KEYW || py < RULER ? 'default' : tool === 'draw' ? 'crosshair' : hover.current.note ? 'ns-resize' : 'default';
+      c.style.cursor = px < KEYW || py < RULER ? 'default' : tool === 'draw' ? 'crosshair' : tool === 'cut' ? (hover.current.note ? 'col-resize' : 'default') : hover.current.note ? 'ns-resize' : 'default';
       redraw();
       return;
     }
@@ -907,8 +1018,15 @@ function Roll(props: RollProps) {
   };
 
   const onDouble = (e: React.MouseEvent) => {
-    if (tool !== 'select') return;
     const { px, py } = pos(e);
+    if (tool === 'cut') {
+      // 双击剪口（两个挨着的音符中间）：合回去
+      const i = Math.round(tAt(px) * FPS);
+      const k = notes.findIndex((n, j) => j > 0 && notes[j - 1].b === n.a && Math.abs(n.a - i) <= Math.max(3, 6 / v.pps * FPS));
+      if (k > 0) onOp({ a: notes[k - 1].a, b: notes[k].b, kind: 'join' });
+      return;
+    }
+    if (tool !== 'select') return;
     const n = hitNote(px, py);
     if (!n) return;
     onOp({ a: n.a, b: n.b, kind: 'snap' }); // 和 Melodyne 一样：双击音符对准最近的半音
