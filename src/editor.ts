@@ -115,7 +115,9 @@ export type EditOp =
   /** 手画的音高线：从第 a 帧起每帧的音高（Hz，取整到 0.1）；只改原来有声音的帧 */
   | { a: number; b: number; kind: 'draw'; hz: number[] }
   /** 对准：这一段里每个音整体挪到最近的半音（颤音、滑音都留着） */
-  | { a: number; b: number; kind: 'snap' };
+  | { a: number; b: number; kind: 'snap' }
+  /** 像 Melodyne 的音高校正：每个音的中心往最近的半音挪 center（0–1），音里的起伏（颤音、漂移）压平 flatten（0–1） */
+  | { a: number; b: number; kind: 'tune'; center: number; flatten: number };
 
 export const editDir = (songDir: string) => join(songDir, 'edit');
 
