@@ -721,9 +721,9 @@ function Roll(props: RollProps) {
       if (m % 12 === 0) { g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(KEYW, y(m - 0.5), W - KEYW, 1); }
     }
     // 她唱着不哑的音域（按现在的调换算回原调的位置）
-    g.fillStyle = 'rgba(120,190,255,.06)';
+    g.fillStyle = 'rgba(120,190,255,.12)';
     g.fillRect(KEYW, y(HER_HIGH - keyShift + 0.5), W - KEYW, (HER_HIGH - HER_LOW + 1) * v.spx);
-    g.strokeStyle = 'rgba(120,190,255,.3)'; g.setLineDash([4, 4]); g.lineWidth = 1;
+    g.strokeStyle = 'rgba(140,205,255,.6)'; g.setLineDash([4, 4]); g.lineWidth = 1;
     for (const m of [HER_HIGH + 0.5, HER_LOW - 0.5]) { g.beginPath(); g.moveTo(KEYW, y(m - keyShift)); g.lineTo(W, y(m - keyShift)); g.stroke(); }
     g.setLineDash([]);
     // 频谱（第 r 行像素的中心是 MIDI 95.67 - r/3：CQT 从 MIDI 36 起每半音 3 格，图上下翻过）
