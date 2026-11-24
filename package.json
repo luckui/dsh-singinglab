@@ -4,6 +4,15 @@
   "description": "A music player for DeepSeek Harness where 大肥鱼 sings: tell her a song, she learns it on your machine and plays it.",
   "type": "module",
   "license": "MIT",
+  "author": "luckui",
+  "homepage": "https://github.com/luckui/dsh-singinglab#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luckui/dsh-singinglab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/luckui/dsh-singinglab/issues"
+  },
   "exports": {
     ".": "./lib/index.js",
     "./agent": "./lib/agent.js",
